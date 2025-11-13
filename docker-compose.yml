@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  dev:
+    build:
+      context: .
+
+    working_dir: /app
+
+    volumes:
+      - .:/app
+
+    tty: true
+    stdin_open: true
