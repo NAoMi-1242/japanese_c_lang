@@ -1,59 +1,63 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "lexer.h"
+#include "parser.h"
 
-// トークン種別を文字列に変換するデバッグ用関数
-const char* getTokenName(TokenType type) {
-    switch (type) {
-        case TK_EOF:         return "TK_EOF";
-        case TK_MAIN:        return "TK_MAIN (メイン)";
-        
-        // 値・変数
-        case TK_VARIABLE:    return "TK_VARIABLE (変数)";
-        case TK_LITERAL:     return "TK_LITERAL (数値)";
-        case TK_PRINT_LIT:   return "TK_PRINT_LIT (出力文字)";
-        
-        // 記号
-        case TK_LPAR:        return "TK_LPAR (";
-        case TK_RPAR:        return "TK_RPAR )";
-        case TK_LBRACE:      return "TK_LBRACE {";
-        case TK_RBRACE:      return "TK_RBRACE }";
-        case TK_PERIOD:      return "TK_PERIOD 。";
-        
-        // 助詞
-        case TK_WO:          return "TK_WO (を)";
-        case TK_NI:          return "TK_NI (に)";
-        case TK_KARA:        return "TK_KARA (から)";
-        case TK_GA:          return "TK_GA (が)";
-        
-        // キーワード (命令)
-        case TK_DECLARE:     return "TK_DECLARE (で宣言する)";
-        case TK_DIV:         return "TK_DIV (でわる)";
-        case TK_ASSIGN:      return "TK_ASSIGN (を代入する)";
-        case TK_ADD:         return "TK_ADD (をたす)";
-        case TK_MUL:         return "TK_MUL (をかける)";
-        case TK_SUB:         return "TK_SUB (をひく)";
-        case TK_INPUT:       return "TK_INPUT (入力する)";
-        case TK_OUTPUT:      return "TK_OUTPUT (と出力する)";
-        
-        // 制御構文
-        case TK_LOOP:        return "TK_LOOP (ループ)";
-        case TK_IF:          return "TK_IF (もし)";
-        case TK_ELSEIF:      return "TK_ELSEIF (ではなく)";
-        case TK_ELSE:        return "TK_ELSE (ではない)";
-        
-        // 比較・論理
-        case TK_OP_GE:       return "TK_OP_GE (以上か)";
-        case TK_OP_LE:       return "TK_OP_LE (以下か)";
-        case TK_OP_GT:       return "TK_OP_GT (より大きいか)";
-        case TK_OP_LT:       return "TK_OP_LT (より小さいか)";
-        case TK_OP_EQ:       return "TK_OP_EQ (と一緒か)";
-        case TK_OP_NE:       return "TK_OP_NE (と違うか)";
-        case TK_AND:         return "TK_AND (かつ)";
-        case TK_OR:          return "TK_OR (または)";
-        
-        default:             return "UNKNOWN_TOKEN";
+// ASTを再帰的に表示するデバッグ関数
+void print_ast(Node *node, int depth) {
+    if (node == NULL) return;
+
+    for (int i = 0; i < depth; i++) printf("  ");
+
+    switch (node->kind) {
+        case ND_PROGRAM: printf("PROGRAM\n"); break;
+        case ND_BLOCK:   printf("BLOCK\n"); break;
+        case ND_IF:      printf("IF\n"); break;
+        case ND_ELSEIF:  printf("ELSE IF\n"); break;
+        case ND_LOOP:    printf("LOOP\n"); break;
+        case ND_DECLARE: printf("DECLARE\n"); break;
+        case ND_ASSIGN:  printf("ASSIGN\n"); break;
+        case ND_ADD:     printf("ADD\n"); break;
+        case ND_SUB:     printf("SUB\n"); break;
+        case ND_MUL:     printf("MUL\n"); break;
+        case ND_DIV:     printf("DIV\n"); break;
+        case ND_INPUT:   printf("INPUT\n"); break;
+        case ND_OUTPUT:  printf("OUTPUT\n"); break;
+        case ND_VAR:     printf("VAR: %s\n", node->name); break;
+        case ND_LITERAL: printf("NUM: %f\n", node->val); break;
+        case ND_STR_LIT: printf("STR: %s\n", node->strVal); break;
+        case ND_EQ:      printf("EQ (==)\n"); break;
+        case ND_NE:      printf("NE (!=)\n"); break;
+        case ND_LT:      printf("LT (<)\n"); break;
+        case ND_LE:      printf("LE (<=)\n"); break;
+        case ND_GT:      printf("GT (>)\n"); break;
+        case ND_GE:      printf("GE (>=)\n"); break;
+        case ND_AND:     printf("AND\n"); break;
+        case ND_OR:      printf("OR\n"); break;
+        default:         printf("UNKNOWN NODE (%d)\n", node->kind); break;
     }
+
+    // 子ノードや次の文を表示
+    if (node->cond) {
+        for (int i = 0; i < depth+1; i++) printf("  ");
+        printf("[cond]:\n");
+        print_ast(node->cond, depth + 2);
+    }
+    if (node->then) {
+        for (int i = 0; i < depth+1; i++) printf("  ");
+        printf("[then]:\n");
+        print_ast(node->then, depth + 2);
+    }
+    if (node->els) {
+        for (int i = 0; i < depth+1; i++) printf("  ");
+        printf("[else]:\n");
+        print_ast(node->els, depth + 2);
+    }
+    
+    if (node->lhs) print_ast(node->lhs, depth + 1);
+    if (node->rhs) print_ast(node->rhs, depth + 1);
+    
+    if (node->next) print_ast(node->next, depth); // 兄弟ノードは同じインデントで
 }
 
 int main(int argc, char *argv[]) {
@@ -68,26 +72,18 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("=== Lexer Test Start: Reading %s ===\n", argv[1]);
-
-    // ★最初のトークンを先読み
+    // 1. Lexer初期化 (先読み)
     getNextToken(fp);
 
-    int count = 0;
-    // ★ループ条件：getNextTokenの戻り値ではなく、グローバル変数をチェック
-    while (token != TK_EOF) {
-        printf("[%03d] Token: %-30s", ++count, getTokenName(token));
-        
-        if (token == TK_VARIABLE || token == TK_LITERAL || token == TK_PRINT_LIT) {
-            printf(" Value: %s", tokenStr);
-        }
-        printf("\n");
+    // 2. Parser実行 (AST構築)
+    printf("=== Parser Start ===\n");
+    Node *root = parse_program(fp);
+    printf("=== Parser End ===\n");
 
-        // ★次へ進む
-        getNextToken(fp);
-    }
+    // 3. AST表示 (デバッグ)
+    printf("=== AST Dump ===\n");
+    print_ast(root, 0);
 
-    printf("=== Lexer Test End ===\n");
     fclose(fp);
     return 0;
 }

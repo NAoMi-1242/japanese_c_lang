@@ -171,7 +171,7 @@ jpc言語では、C言語のセミコロン（;）に相当する区切り文字
         double jpc_var_2 = (double)0;
         double jpc_var_3 = (double)0;
 
-        while(jpc_var_2 >= (double)100 && jpc_var_1 > (double)0) {\
+        while(jpc_var_2 <= (double)100 && jpc_var_1 > (double)0) {\
             printf("整数を入力してください：");
             scanf("%lf", &jpc_var_3);
 
