@@ -1,3 +1,9 @@
+*
+!*/
+!*.*
+
 ref/
+!Dockerfile
 *.o
 *.exe
+*.out
