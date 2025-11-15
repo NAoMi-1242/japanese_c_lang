@@ -55,11 +55,8 @@ int checkCommentOut(FILE *fp, int c) {
             
             // --- 行コメント: ＃ (EF BC 83) ---
             if (next2 == 0x83) { 
+                // 改行まで読んで完全に消費（改行も含めてコメント扱い）
                 while ((c = getCh(fp)) != '\n' && c != EOF);
-                
-                if (c == '\n') {
-                    ungetCh(c);
-                }
                 return 1; // スキップ完了
             }
             
@@ -73,7 +70,14 @@ int checkCommentOut(FILE *fp, int c) {
                         int n1 = getCh(fp);
                         if (n1 == 0xBC) {
                             int n2 = getCh(fp);
-                            if (n2 == 0x84) break; // 「＄」発見
+                            if (n2 == 0x84) {
+                                // 終了＄の直後の改行も消費
+                                c = getCh(fp);
+                                if (c != '\n' && c != EOF) {
+                                    ungetCh(c); // 改行以外なら戻す
+                                }
+                                break;
+                            }
                             ungetCh(n2); ungetCh(n1);
                         } else { ungetCh(n1); }
                     }
@@ -92,6 +96,7 @@ int checkCommentOut(FILE *fp, int c) {
 }
 
 // --- 文字読み込み関数 ---
+// skip_space: 0=すべて返す, 1=半角空白/タブのみスキップ
 int readUTF8Char(FILE *fp, char *buf, int skip_space) {
     int c;
 
@@ -99,28 +104,9 @@ int readUTF8Char(FILE *fp, char *buf, int skip_space) {
         c = getCh(fp);
         if (c == EOF) return 0;
 
-        if (skip_space && isspace(c)) {
-            continue;
-        }
-
-        // 全角スペース (E3 80 80) のスキップ
-        if (c == 0xE3) {
-            int n1 = getCh(fp);
-            if (n1 == 0x80) {
-                int n2 = getCh(fp);
-                if (n2 == 0x80) {
-                    if (skip_space) continue; 
-                    // リテラル内なら文字として扱うためバッファへ戻さず下へ
-                } else {
-                    ungetCh(n2); ungetCh(n1);
-                }
-            } else {
-                ungetCh(n1);
-            }
-        }
-
-        if (skip_space) {
-            if (checkCommentOut(fp, c)) {
+        // 半角空白・タブのスキップ（skip_space >= 1の場合）
+        if (skip_space >= 1) {
+            if (c == ' ' || c == '\t') {
                 continue;
             }
         }
@@ -152,7 +138,7 @@ int checkKeyword(FILE *fp, const char *expect) {
     const char *p = expect;
     
     while (*p != '\0') {
-        if (!readUTF8Char(fp, charBuf, 1)) break; 
+        if (!readUTF8Char(fp, charBuf, 1)) break;  // 半角空白・タブをスキップ 
 
         int charLen = strlen(charBuf);
         for(int i=0; i<charLen; i++) {
@@ -204,12 +190,43 @@ int convertZenkakuDot(const char *utf8_char, char *out) {
 void getNextToken(FILE *fp) {
     char charBuf[5];
     
-    if (!readUTF8Char(fp, charBuf, 1)) {
-        token = TK_EOF;
-        return;
+    // コメントを明示的にスキップ
+    while (1) {
+        if (!readUTF8Char(fp, charBuf, 1)) {  // 半角空白・タブをスキップ
+            token = TK_EOF;
+            return;
+        }
+        
+        // コメント判定（最初の1文字を読んだ時点でチェック）
+        unsigned char u0 = (unsigned char)charBuf[0];
+        if (u0 == 0xEF) {
+            // pushback してcheckCommentOutで判定
+            for (int i = strlen(charBuf) - 1; i >= 0; i--) {
+                ungetCh((unsigned char)charBuf[i]);
+            }
+            int c = getCh(fp);
+            if (checkCommentOut(fp, c)) {
+                continue;  // コメントだった場合、次のトークンへ
+            }
+            ungetCh(c);  // コメントでなければ戻す
+            
+            // 再度読み直し
+            if (!readUTF8Char(fp, charBuf, 1)) {
+                token = TK_EOF;
+                return;
+            }
+        }
+        
+        break;  // コメントでない文字が来たらループ終了
     }
     
     strcpy(tokenStr, charBuf);
+
+    // --- 改行 ---
+    if (strcmp(charBuf, "\n") == 0) { token = TK_LN; return; }
+
+    // --- 全角空白 (E3 80 80) ---
+    if (strcmp(charBuf, "　") == 0) { token = TK_WS; return; }
 
     // --- 記号 ---
     if (strcmp(charBuf, "（") == 0) { token = TK_LPAR; return; }

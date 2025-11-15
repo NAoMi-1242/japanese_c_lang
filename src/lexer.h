@@ -14,6 +14,10 @@ typedef enum {
     TK_LITERAL,     // 「...」 (数値)
     TK_PRINT_LIT,   // 「...」 (出力用文字列)
 
+    // 空白・改行
+    TK_WS,          // 全角空白 (U+3000)
+    TK_LN,          // 改行 (\n)
+
     // 記号
     TK_LPAR,        // （
     TK_RPAR,        // ）
