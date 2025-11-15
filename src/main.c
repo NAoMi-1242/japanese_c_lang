@@ -48,6 +48,7 @@ const char* getTokenName(TokenType type) {
         case TK_OP_GT:       return "TK_OP_GT (より大きいか)";
         case TK_OP_LT:       return "TK_OP_LT (より小さいか)";
         case TK_OP_EQ:       return "TK_OP_EQ (と一緒か)";
+        case TK_OP_NE:       return "TK_OP_NE (と違うか)";
         case TK_AND:         return "TK_AND (かつ)";
         case TK_OR:          return "TK_OR (または)";
         

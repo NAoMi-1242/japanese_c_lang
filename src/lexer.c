@@ -257,6 +257,7 @@ void getNextToken(FILE *fp) {
     if (strcmp(charBuf, "と") == 0) { 
         if (checkKeyword(fp, "出力する")) { token = TK_OUTPUT; return; }
         if (checkKeyword(fp, "一緒か"))   { token = TK_OP_EQ; return; }
+        if (checkKeyword(fp, "違うか"))   { token = TK_OP_NE; return; }
         printf("Syntax Error: unknown keyword starting with 'と'\n"); return;
     }
     
