@@ -52,9 +52,14 @@ struct Node {
     Node *els;      // elseブロック
 
     // 値・名前用
-    char *name;     // 変数名 ("A"など)
-    char *strVal;   // 文字列リテラルの中身
-    double val;     // 数値リテラルの値
+    char *name;   // 変数名
+    int var_id;   // 変数ID (jpc_var_X)
+
+    char *strVal; // 文字列リテラル (printfのフォーマット文字列に変換済)
+    int *args;    // 文字列リテラル内の埋め込み変数IDリスト
+    int argc;     // argsの数
+
+    double val;
 };
 
 // 関数プロトタイプ宣言
