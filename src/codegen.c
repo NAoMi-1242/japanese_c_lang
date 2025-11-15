@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "codegen.h"
+#include "error.h"
 
 // --- ヘルパー関数 ---
 
@@ -171,8 +172,7 @@ void gen(Node *node, int depth) {
         return;
 
     default:
-        fprintf(stderr, "Codegen Error: Unknown Node Kind %d\n", node->kind);
-        exit(1);
+        error(ERR_CODEGEN, "Unknown Node Kind %d", node->kind);
     }
 }
 

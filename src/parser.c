@@ -3,13 +3,7 @@
 #include <string.h>
 #include "parser.h"
 #include "lexer.h"
-
-// --- エラー処理 ---
-void error(const char *fmt) {
-    // 本来は行番号も含めたいが、簡易実装としてトークン情報を表示
-    fprintf(stderr, "Parse Error: %s (Token: %s)\n", fmt, tokenStr);
-    exit(1);
-}
+#include "error.h"
 
 // --- スコープ・変数管理 (Parser側で実施) ---
 // 変数名とIDを紐付けるリスト
@@ -69,10 +63,8 @@ Node *new_num(double val) {
 Node *new_var_node(char *name) {
     LVar *lvar = find_lvar(name);
     if (!lvar) {
-        // ★修正: バッファサイズを拡張
-        char msg[512];
-        sprintf(msg, "未定義の変数「%s」が参照されています", name);
-        error(msg);
+        // エラー種別: 意味解析エラー (未定義変数)
+        error(ERR_SEMANTIC, "未定義の変数「%s」が参照されています", name);
     }
 
     Node *node = new_node(ND_VAR);
@@ -82,7 +74,6 @@ Node *new_var_node(char *name) {
 }
 
 // 文字列リテラル解析 (埋め込み変数の解決とフォーマット文字列生成)
-// 例: "合計値は”A”です" -> fmt: "合計値は%fです\n", args: [ID_OF_A]
 Node *new_str_lit_node(char *content) {
     Node *node = new_node(ND_STR_LIT);
     
@@ -115,10 +106,8 @@ Node *new_str_lit_node(char *content) {
                 // 変数を検索しIDを取得
                 LVar *lvar = find_lvar(var_name);
                 if (!lvar) {
-                    // ★修正: バッファサイズを拡張
-                    char msg[512];
-                    sprintf(msg, "文字列内で未定義の変数「%s」が使われています", var_name);
-                    error(msg);
+                    // エラー種別: 意味解析エラー (文字列内で未定義変数)
+                    error(ERR_SEMANTIC, "文字列内で未定義の変数「%s」が使われています", var_name);
                 }
                 
                 // IDリストに追加
@@ -164,7 +153,8 @@ int consume(TokenType type, FILE *fp) {
 
 void expect(TokenType type, FILE *fp) {
     if (token != type) {
-        error("予期しないトークンです");
+        // エラー種別: 構文エラー
+        error(ERR_SYNTAX, "予期しないトークンです (Token: %s)", tokenStr);
     }
     getNextToken(fp);
 }
@@ -193,7 +183,7 @@ Node *parse_program(FILE *fp) {
 
 // statement_list ::= { statement }
 Node *parse_statement_list(FILE *fp) {
-    // ★スコープ開始：現在の変数の先頭を覚えておく
+    // スコープ開始：現在の変数の先頭を覚えておく
     LVar *scope_snapshot = locals;
 
     Node head;
@@ -205,7 +195,7 @@ Node *parse_statement_list(FILE *fp) {
         cur = cur->next;
     }
 
-    // ★スコープ終了：リストを巻き戻す (ブロック内変数の破棄)
+    // スコープ終了：リストを巻き戻す (ブロック内変数の破棄)
     locals = scope_snapshot;
 
     return head.next;
@@ -234,7 +224,8 @@ Node *parse_value(FILE *fp) {
         getNextToken(fp);
         return node;
     }
-    error("数値または変数が期待されています");
+    // エラー種別: 構文エラー
+    error(ERR_SYNTAX, "数値または変数が期待されています (Token: %s)", tokenStr);
     return NULL;
 }
 
@@ -271,9 +262,7 @@ Node *parse_simple_statement(FILE *fp) {
             if (token == TK_DECLARE) { // ...で宣言する
                 getNextToken(fp);
                 
-                // ★宣言処理: ここでのみ新規IDを発行
-                // シャドーイング(同名変数)を許容するならチェック不要
-                // ここでは許容し、新しい変数として登録する
+                // 宣言処理: 新規IDを発行
                 int id = register_lvar(name);
                 
                 Node *target = new_node(ND_VAR);
@@ -284,8 +273,6 @@ Node *parse_simple_statement(FILE *fp) {
 
             } else if (token == TK_DIV) { // ...でわる
                 getNextToken(fp);
-                // 既存変数の参照 (new_var_nodeではなく手動作成でも良いが、ID取得が必要)
-                // ここではnew_var_nodeを使ってID取得・存在確認済みのノードを得る
                 Node *target = new_var_node(name); 
                 return new_binary(ND_DIV, target, val);
             }
@@ -325,20 +312,20 @@ Node *parse_simple_statement(FILE *fp) {
         }
     }
 
-    error("不明な文です");
+    // エラー種別: 構文エラー
+    error(ERR_SYNTAX, "不明な文です (Token: %s)", tokenStr);
     return NULL;
 }
 
 // --- 条件式のパース ---
 
 Node *parse_simple_condition(FILE *fp) {
-    // ★修正: 左辺を「変数」固定から「値 (変数or数値)」に変更
-    // これにより「10がAと一緒か」のような記述が可能になる
+    // 左辺は値（変数orリテラル）
     Node *lhs = parse_value(fp);
 
     expect(TK_GA, fp);
 
-    // 右辺 (parse_value内でチェック済み)
+    // 右辺
     Node *rhs = parse_value(fp);
 
     NodeKind kind;
@@ -348,7 +335,8 @@ Node *parse_simple_condition(FILE *fp) {
     else if (token == TK_OP_LT) kind = ND_LT;
     else if (token == TK_OP_EQ) kind = ND_EQ;
     else if (token == TK_OP_NE) kind = ND_NE;
-    else error("不明な比較演算子です");
+    // エラー種別: 構文エラー
+    else error(ERR_SYNTAX, "不明な比較演算子です (Token: %s)", tokenStr);
 
     getNextToken(fp);
     return new_binary(kind, lhs, rhs);
@@ -458,6 +446,7 @@ Node *parse_block_statement(FILE *fp) {
         return node;
     }
 
-    error("ブロック文が期待されています");
+    // エラー種別: 構文エラー
+    error(ERR_SYNTAX, "ブロック文が期待されています (Token: %s)", tokenStr);
     return NULL;
 }

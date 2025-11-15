@@ -3,34 +3,45 @@
 #include <string.h>
 #include <ctype.h>
 #include "lexer.h"
+#include "error.h"
 
 // グローバル変数の実体定義
+extern int current_line; // error.hでextern宣言されたものを使う
+
 char tokenStr[1024];
 TokenType token;
 
-// バッファリング用
+// バッファリング用 (その他省略)
 static int pushback_buf[20]; 
 static int pushback_count = 0;
 
 // --- 基本読み込み関数 ---
 int getCh(FILE *fp) {
-    if (pushback_count > 0) {
-        return pushback_buf[--pushback_count];
-    }
     int c;
-    if (fp == NULL) return EOF;
-    do {
-        c = fgetc(fp);
-    } while (c == '\r'); // WindowsのCRは常に無視
+    if (pushback_count > 0) {
+        c = pushback_buf[--pushback_count];
+    } else {
+        if (fp == NULL) return EOF;
+        do {
+            c = fgetc(fp);
+        } while (c == '\r');
+    }
+    
+    if (c == '\n') {
+        current_line++;
+    }
     return c;
 }
 
 void ungetCh(int c) {
+    if (c == '\n') {
+        current_line--;
+    }
+
     if (c != EOF && pushback_count < 20) {
         pushback_buf[pushback_count++] = c;
     } else if (pushback_count >= 20) {
-        fprintf(stderr, "Error: Pushback buffer overflow\n");
-        exit(1);
+        error(ERR_SYSTEM, "Pushback buffer overflow");
     }
 }
 
@@ -45,6 +56,10 @@ int checkCommentOut(FILE *fp, int c) {
             // --- 行コメント: ＃ (EF BC 83) ---
             if (next2 == 0x83) { 
                 while ((c = getCh(fp)) != '\n' && c != EOF);
+                
+                if (c == '\n') {
+                    ungetCh(c);
+                }
                 return 1; // スキップ完了
             }
             
@@ -210,7 +225,7 @@ void getNextToken(FILE *fp) {
     // --- キーワード分岐 ---
     if (strcmp(charBuf, "メ") == 0) { 
         if (checkKeyword(fp, "イン")) { token = TK_MAIN; return; }
-        printf("Syntax Error: unknown keyword starting with 'メ'\n"); return;
+        error(ERR_LEXER, "Unknown keyword starting with 'メ' -> %s", charBuf);
     }
 
     if (strcmp(charBuf, "で") == 0) {
@@ -220,9 +235,9 @@ void getNextToken(FILE *fp) {
         if (checkKeyword(fp, "は")) { 
             if (checkKeyword(fp, "なく")) { token = TK_ELSEIF; return; }
             if (checkKeyword(fp, "ない")) { token = TK_ELSE; return; }
-            printf("Syntax Error: unknown keyword starting with 'では'\n"); return;
+            error(ERR_LEXER, "Unknown keyword starting with 'で' -> %s", charBuf);
         }
-        printf("Syntax Error: unknown keyword starting with 'で'\n"); return;
+        error(ERR_LEXER, "Unknown keyword starting with 'で' -> %s", charBuf);
     }
 
     if (strcmp(charBuf, "を") == 0) {
@@ -236,49 +251,49 @@ void getNextToken(FILE *fp) {
     if (strcmp(charBuf, "か") == 0) {
         if (checkKeyword(fp, "ら")) { token = TK_KARA; return; }
         if (checkKeyword(fp, "つ")) { token = TK_AND; return; }
-        printf("Syntax Error: unknown keyword starting with 'か'\n"); return;
+        error(ERR_LEXER, "Unknown keyword starting with 'か' -> %s", charBuf);
     }
 
     if (strcmp(charBuf, "ル") == 0) { 
         if (checkKeyword(fp, "ープ")) { token = TK_LOOP; return; }
-        printf("Syntax Error: unknown keyword starting with 'ル'\n"); return;
+        error(ERR_LEXER, "Unknown keyword starting with 'ル' -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "も") == 0) { 
         if (checkKeyword(fp, "し")) { token = TK_IF; return; }
-        printf("Syntax Error: unknown keyword starting with 'も'\n"); return;
+        error(ERR_LEXER, "Unknown keyword starting with 'も' -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "入") == 0) { 
         if (checkKeyword(fp, "力する")) { token = TK_INPUT; return; }
-        printf("Syntax Error: unknown keyword starting with '入'\n"); return;
+        error(ERR_LEXER, "Unknown keyword starting with '入' -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "と") == 0) { 
         if (checkKeyword(fp, "出力する")) { token = TK_OUTPUT; return; }
         if (checkKeyword(fp, "一緒か"))   { token = TK_OP_EQ; return; }
         if (checkKeyword(fp, "違うか"))   { token = TK_OP_NE; return; }
-        printf("Syntax Error: unknown keyword starting with 'と'\n"); return;
+        error(ERR_LEXER, "Unknown keyword starting with 'と' -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "ま") == 0) { 
         if (checkKeyword(fp, "たは")) { token = TK_OR; return; }
-        printf("Syntax Error: unknown keyword starting with 'ま'\n"); return;
+        error(ERR_LEXER, "Unknown keyword starting with 'ま' -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "以") == 0) {
         if (checkKeyword(fp, "上か")) { token = TK_OP_GE; return; }
         if (checkKeyword(fp, "下か")) { token = TK_OP_LE; return; }
-        printf("Syntax Error: unknown keyword starting with '以'\n"); return;
+        error(ERR_LEXER, "Unknown keyword starting with '以' -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "よ") == 0) { 
         if (checkKeyword(fp, "り")) { 
             if (checkKeyword(fp, "大きいか")) { token = TK_OP_GT; return; }
             if (checkKeyword(fp, "小さいか")) { token = TK_OP_LT; return; }
-            printf("Syntax Error: unknown keyword starting with 'より'\n"); return;
+            error(ERR_LEXER, "Unknown keyword starting with 'より' -> %s", charBuf);
         }
-        printf("Syntax Error: unknown keyword starting with 'よ'\n"); return;
+        error(ERR_LEXER, "Unknown keyword starting with 'よ' -> %s", charBuf);
     }
 
     // --- 変数 ("...") ---
@@ -287,12 +302,10 @@ void getNextToken(FILE *fp) {
         tokenStr[0] = '\0';
         while (1) {
             if (!readUTF8Char(fp, charBuf, 0)) { 
-                printf("Syntax Error: Unexpected EOF inside variable name\n");
-                return;
+                error(ERR_LEXER, "Unexpected EOF inside variable name");
             }
             if (strcmp(charBuf, "\n") == 0 || strcmp(charBuf, "\r") == 0) {
-                printf("Syntax Error: Unclosed variable quote (”)\n");
-                return;
+                error(ERR_LEXER, "Unclosed variable quote (”)");
             }
             if (strcmp(charBuf, "”") == 0) break;
             strcat(tokenStr, charBuf);
@@ -309,20 +322,15 @@ void getNextToken(FILE *fp) {
 
         while (1) {
             if (!readUTF8Char(fp, charBuf, 0)) {
-                printf("Syntax Error: Unexpected EOF inside literal\n");
-                return;
+                error(ERR_LEXER, "Unexpected EOF inside literal");
             }
-
             if (strcmp(charBuf, "\n") == 0 || strcmp(charBuf, "\r") == 0) {
-                printf("Syntax Error: Unclosed literal quote (「)\n");
-                return;
+                error(ERR_LEXER, "Unclosed literal quote (「)");
             }
-            
             if (strcmp(charBuf, "」") == 0) break;
 
             if (strlen(rawStr) >= 1000) {
-                printf("Syntax Error: Literal is too long\n");
-                return;
+                error(ERR_LEXER, "Literal is too long");
             }
 
             strcat(rawStr, charBuf);
@@ -363,9 +371,5 @@ void getNextToken(FILE *fp) {
         return;
     }
 
-    printf("Unknown token: %s\n", charBuf);
-    // ここでの token の扱いは未定義トークンとして扱うかEOFにするか
-    // 一旦EOF扱いにしないとループが止まらない可能性があるが、
-    // 実際は構文エラーとして処理されるべき
-    token = TK_EOF; // 簡易的に終了させる
+    error(ERR_LEXER, "Unknown token: %s", charBuf);
 }
