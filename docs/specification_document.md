@@ -281,11 +281,11 @@ condition_term       ::= condition_factor { "かつ" condition_factor }
 condition_factor     ::= simple_condition
                        | "（" condition_expression "）"
 
-simple_condition    ::= TOKEN_VARIABLE "が" (TOKEN_LITERAL | TOKEN_VARIABLE) "以上か"
-                      | TOKEN_VARIABLE "が" (TOKEN_LITERAL | TOKEN_VARIABLE) "以下か"
-                      | TOKEN_VARIABLE "が" (TOKEN_LITERAL | TOKEN_VARIABLE) "より大きいか"
-                      | TOKEN_VARIABLE "が" (TOKEN_LITERAL | TOKEN_VARIABLE) "より小さいか"
-                      | TOKEN_VARIABLE "が" (TOKEN_LITERAL | TOKEN_VARIABLE) "と一緒か"
-                      | TOKEN_VARIABLE "が" (TOKEN_LITERAL | TOKEN_VARIABLE) "と違うか"
+simple_condition    ::= (TOKEN_LITERAL | TOKEN_VARIABLE) "が" (TOKEN_LITERAL | TOKEN_VARIABLE) "以上か"
+                      | (TOKEN_LITERAL | TOKEN_VARIABLE) "が" (TOKEN_LITERAL | TOKEN_VARIABLE) "以下か"
+                      | (TOKEN_LITERAL | TOKEN_VARIABLE) "が" (TOKEN_LITERAL | TOKEN_VARIABLE) "より大きいか"
+                      | (TOKEN_LITERAL | TOKEN_VARIABLE) "が" (TOKEN_LITERAL | TOKEN_VARIABLE) "より小さいか"
+                      | (TOKEN_LITERAL | TOKEN_VARIABLE) "が" (TOKEN_LITERAL | TOKEN_VARIABLE) "と一緒か"
+                      | (TOKEN_LITERAL | TOKEN_VARIABLE) "が" (TOKEN_LITERAL | TOKEN_VARIABLE) "と違うか"
 ```
 ![条件式関連](images/condition.png)
