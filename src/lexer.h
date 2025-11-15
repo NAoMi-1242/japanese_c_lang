@@ -49,6 +49,7 @@ typedef enum {
     TK_OP_GT,       // より大きいか
     TK_OP_LT,       // より小さいか
     TK_OP_EQ,       // と一緒か
+    TK_OP_NE,       // と違うか
     TK_AND,         // かつ
     TK_OR           // または
 
