@@ -6,11 +6,45 @@
 
 // --- エラー処理 ---
 void error(const char *fmt) {
-    fprintf(stderr, "Parse Error: %s (Token: %d, Val: %s)\n", fmt, token, tokenStr);
+    // 本来は行番号も含めたいが、簡易実装としてトークン情報を表示
+    fprintf(stderr, "Parse Error: %s (Token: %s)\n", fmt, tokenStr);
     exit(1);
 }
 
-// --- ノード生成ヘルパー関数 ---
+// --- スコープ・変数管理 (Parser側で実施) ---
+// 変数名とIDを紐付けるリスト
+typedef struct LVar LVar;
+struct LVar {
+    LVar *next;
+    char *name;
+    int id;     // 発行された一意なID
+};
+
+LVar *locals = NULL;     // 現在のスコープで見える変数リスト (スタック構造)
+int var_counter = 0;     // グローバルなIDカウンタ
+
+// 変数を検索 (現在のスコープから順に遡る)
+LVar *find_lvar(char *name) {
+    for (LVar *v = locals; v; v = v->next) {
+        if (strcmp(v->name, name) == 0) {
+            return v;
+        }
+    }
+    return NULL;
+}
+
+// 変数を登録 (新規ID発行)
+// 常にリストの先頭に追加する
+int register_lvar(char *name) {
+    LVar *v = calloc(1, sizeof(LVar));
+    v->name = strdup(name);
+    v->id = ++var_counter; // 新しいIDを発行
+    v->next = locals;
+    locals = v;
+    return v->id;
+}
+
+// --- ノード生成ヘルパー ---
 
 Node *new_node(NodeKind kind) {
     Node *node = calloc(1, sizeof(Node));
@@ -31,21 +65,95 @@ Node *new_num(double val) {
     return node;
 }
 
-Node *new_var(char *name) {
+// 既存変数の参照ノードを作成 (未定義ならエラー)
+Node *new_var_node(char *name) {
+    LVar *lvar = find_lvar(name);
+    if (!lvar) {
+        // ★修正: バッファサイズを拡張
+        char msg[512];
+        sprintf(msg, "未定義の変数「%s」が参照されています", name);
+        error(msg);
+    }
+
     Node *node = new_node(ND_VAR);
     node->name = strdup(name);
+    node->var_id = lvar->id; // 解決済みのIDをセット
     return node;
 }
 
-Node *new_str_lit(char *str) {
+// 文字列リテラル解析 (埋め込み変数の解決とフォーマット文字列生成)
+// 例: "合計値は”A”です" -> fmt: "合計値は%fです\n", args: [ID_OF_A]
+Node *new_str_lit_node(char *content) {
     Node *node = new_node(ND_STR_LIT);
-    node->strVal = strdup(str);
+    
+    char fmt[2048] = {0};
+    int *ids = calloc(128, sizeof(int)); // 最大128個の埋め込みに対応
+    int argc = 0;
+    
+    char *p = content;
+    
+    // 末尾が「：」なら改行しない
+    int len = strlen(content);
+    int no_newline = 0;
+    if (len >= 3 && strcmp(content + len - 3, "：") == 0) {
+        no_newline = 1;
+    }
+
+    while (*p) {
+        // 変数埋め込み "”" の開始判定
+        if (strncmp(p, "”", 3) == 0) {
+            p += 3;
+            char *start = p;
+            char *end = strstr(start, "”");
+            
+            if (end) {
+                // 変数名を切り出し
+                int var_len = end - start;
+                char var_name[256] = {0};
+                strncpy(var_name, start, var_len);
+
+                // 変数を検索しIDを取得
+                LVar *lvar = find_lvar(var_name);
+                if (!lvar) {
+                    // ★修正: バッファサイズを拡張
+                    char msg[512];
+                    sprintf(msg, "文字列内で未定義の変数「%s」が使われています", var_name);
+                    error(msg);
+                }
+                
+                // IDリストに追加
+                ids[argc++] = lvar->id;
+                
+                // フォーマット文字列には %f を追加
+                strcat(fmt, "%f");
+                p = end + 3;
+            } else {
+                // 閉じカッコがない場合はそのまま出力
+                strcat(fmt, "”");
+            }
+        } 
+        // エスケープ処理 (C言語のprintf用にエスケープ)
+        else if (*p == '"') { strcat(fmt, "\\\""); p++; }
+        else if (*p == '%') { strcat(fmt, "%%"); p++; }
+        else if (*p == '\\') { strcat(fmt, "\\\\"); p++; }
+        else { 
+            // 通常文字
+            strncat(fmt, p, 1); 
+            p++; 
+        }
+    }
+
+    // 改行制御
+    if (!no_newline) strcat(fmt, "\\n");
+
+    node->strVal = strdup(fmt);
+    node->args = ids;
+    node->argc = argc;
     return node;
 }
 
 // --- トークン操作ヘルパー ---
 
-// 期待するトークンなら読み進めて true を返す
 int consume(TokenType type, FILE *fp) {
     if (token == type) {
         getNextToken(fp); 
@@ -54,20 +162,20 @@ int consume(TokenType type, FILE *fp) {
     return 0;
 }
 
-// 期待するトークンでなければエラー
 void expect(TokenType type, FILE *fp) {
     if (token != type) {
-        error("Unexpected token");
+        error("予期しないトークンです");
     }
     getNextToken(fp);
 }
 
-// --- 構文解析関数 (プロトタイプ宣言) ---
+// --- 解析関数プロトタイプ ---
 Node *parse_statement_list(FILE *fp);
 Node *parse_statement(FILE *fp);
 Node *parse_simple_statement(FILE *fp);
 Node *parse_block_statement(FILE *fp);
 Node *parse_condition_expression(FILE *fp);
+Node *parse_value(FILE *fp);
 
 // --- 実装 ---
 
@@ -85,70 +193,75 @@ Node *parse_program(FILE *fp) {
 
 // statement_list ::= { statement }
 Node *parse_statement_list(FILE *fp) {
+    // ★スコープ開始：現在の変数の先頭を覚えておく
+    LVar *scope_snapshot = locals;
+
     Node head;
     head.next = NULL;
     Node *cur = &head;
 
-    // ブロック終了 "}" または EOF が来るまで繰り返す
     while (token != TK_RBRACE && token != TK_EOF) {
         cur->next = parse_statement(fp);
         cur = cur->next;
     }
 
+    // ★スコープ終了：リストを巻き戻す (ブロック内変数の破棄)
+    locals = scope_snapshot;
+
     return head.next;
 }
 
-// statement ::= block_statement | simple_statement "。"
+// statement
 Node *parse_statement(FILE *fp) {
-    // ブロック文 (ループ, もし)
     if (token == TK_LOOP || token == TK_IF) {
         return parse_block_statement(fp);
     }
     
-    // 単文
     Node *node = parse_simple_statement(fp);
-    expect(TK_PERIOD, fp); // 文末の「。」をチェック
+    expect(TK_PERIOD, fp);
     return node;
 }
 
-// 値 (リテラル or 変数) をパースする
+// 値 (リテラル or 変数)
 Node *parse_value(FILE *fp) {
     if (token == TK_LITERAL) {
         double val = atof(tokenStr);
         getNextToken(fp);
         return new_num(val);
     } else if (token == TK_VARIABLE) {
-        Node *node = new_var(tokenStr);
+        // 変数ノード生成時に未定義チェックとID解決を行う
+        Node *node = new_var_node(tokenStr);
         getNextToken(fp);
         return node;
     }
-    error("Expected number or variable");
+    error("数値または変数が期待されています");
     return NULL;
 }
 
 // simple_statement
 Node *parse_simple_statement(FILE *fp) {
-    // 1. 出力文: (LIT | PRINT_LIT) "と出力する"
+    // 1. 出力文
     if (token == TK_LITERAL || token == TK_PRINT_LIT) {
-        Node *node;
+        Node *val;
         if (token == TK_LITERAL) {
-            node = new_num(atof(tokenStr));
+            val = new_num(atof(tokenStr));
         } else {
-            node = new_str_lit(tokenStr);
+            // 文字列リテラル解析 (埋め込み解決)
+            val = new_str_lit_node(tokenStr);
         }
         getNextToken(fp);
         
         expect(TK_OUTPUT, fp);
         
         Node *outNode = new_node(ND_OUTPUT);
-        outNode->lhs = node; // 左辺に出力内容を持たせる
+        outNode->lhs = val;
         return outNode;
     }
 
-    // 2. 変数操作: VARIABLE statement_suffix
+    // 2. 変数操作
     if (token == TK_VARIABLE) {
-        Node *target = new_var(tokenStr);
-        getNextToken(fp); // 変数を消費
+        char *name = strdup(tokenStr);
+        getNextToken(fp); 
 
         // サフィックス分岐
         if (token == TK_WO) { // ...を
@@ -157,15 +270,32 @@ Node *parse_simple_statement(FILE *fp) {
             
             if (token == TK_DECLARE) { // ...で宣言する
                 getNextToken(fp);
+                
+                // ★宣言処理: ここでのみ新規IDを発行
+                // シャドーイング(同名変数)を許容するならチェック不要
+                // ここでは許容し、新しい変数として登録する
+                int id = register_lvar(name);
+                
+                Node *target = new_node(ND_VAR);
+                target->name = name;
+                target->var_id = id; // 新規ID
+
                 return new_binary(ND_DECLARE, target, val);
+
             } else if (token == TK_DIV) { // ...でわる
                 getNextToken(fp);
+                // 既存変数の参照 (new_var_nodeではなく手動作成でも良いが、ID取得が必要)
+                // ここではnew_var_nodeを使ってID取得・存在確認済みのノードを得る
+                Node *target = new_var_node(name); 
                 return new_binary(ND_DIV, target, val);
             }
         }
         else if (token == TK_NI) { // ...に
             getNextToken(fp);
             
+            // 対象変数は既存のもの (存在チェック)
+            Node *target = new_var_node(name);
+
             if (token == TK_INPUT) { // 入力する
                 getNextToken(fp);
                 Node *inNode = new_node(ND_INPUT);
@@ -188,25 +318,27 @@ Node *parse_simple_statement(FILE *fp) {
         }
         else if (token == TK_KARA) { // ...から
             getNextToken(fp);
+            Node *target = new_var_node(name); // 存在チェック
             Node *val = parse_value(fp);
-            expect(TK_SUB, fp); // をひく
+            expect(TK_SUB, fp); 
             return new_binary(ND_SUB, target, val);
         }
     }
 
-    error("Unknown statement");
+    error("不明な文です");
     return NULL;
 }
 
-// 条件式のパース (再帰下降)
-// simple_condition ::= VAR "が" (LIT|VAR) OP
+// --- 条件式のパース ---
+
 Node *parse_simple_condition(FILE *fp) {
-    if (token != TK_VARIABLE) error("Condition must start with variable");
-    Node *lhs = new_var(tokenStr);
-    getNextToken(fp);
+    // ★修正: 左辺を「変数」固定から「値 (変数or数値)」に変更
+    // これにより「10がAと一緒か」のような記述が可能になる
+    Node *lhs = parse_value(fp);
 
     expect(TK_GA, fp);
 
+    // 右辺 (parse_value内でチェック済み)
     Node *rhs = parse_value(fp);
 
     NodeKind kind;
@@ -216,9 +348,9 @@ Node *parse_simple_condition(FILE *fp) {
     else if (token == TK_OP_LT) kind = ND_LT;
     else if (token == TK_OP_EQ) kind = ND_EQ;
     else if (token == TK_OP_NE) kind = ND_NE;
-    else error("Unknown operator in condition");
+    else error("不明な比較演算子です");
 
-    getNextToken(fp); // 演算子を消費
+    getNextToken(fp);
     return new_binary(kind, lhs, rhs);
 }
 
@@ -227,7 +359,6 @@ Node *parse_condition_factor(FILE *fp);
 // term { "または" term }
 Node *parse_condition_expression(FILE *fp) {
     Node *node = parse_condition_factor(fp);
-    
     while (token == TK_OR) {
         getNextToken(fp);
         node = new_binary(ND_OR, node, parse_condition_factor(fp));
@@ -238,7 +369,6 @@ Node *parse_condition_expression(FILE *fp) {
 // factor { "かつ" factor }
 Node *parse_condition_term(FILE *fp) {
     Node *node;
-    // factor相当の処理 (simple_condition or (expression))
     if (token == TK_LPAR) {
         getNextToken(fp);
         node = parse_condition_expression(fp);
@@ -262,6 +392,7 @@ Node *parse_condition_term(FILE *fp) {
     return node;
 }
 
+// factorとtermの呼び出し階層を整理（OR -> AND -> Simple）
 Node *parse_condition_factor(FILE *fp) {
     return parse_condition_term(fp);
 }
@@ -300,7 +431,7 @@ Node *parse_block_statement(FILE *fp) {
         // else if / else の連鎖処理
         Node *curr = node;
         while (token == TK_ELSEIF) {
-            getNextToken(fp); // "ではなく"
+            getNextToken(fp); 
             expect(TK_LPAR, fp);
             Node *elif_cond = parse_condition_expression(fp);
             expect(TK_RPAR, fp);
@@ -308,7 +439,6 @@ Node *parse_block_statement(FILE *fp) {
             Node *elif_body = parse_statement_list(fp);
             expect(TK_RBRACE, fp);
 
-            // else if は ND_ELSEIF ノードとして作成
             Node *elif_node = new_node(ND_ELSEIF); 
             elif_node->cond = elif_cond;
             elif_node->then = elif_body;
@@ -318,7 +448,7 @@ Node *parse_block_statement(FILE *fp) {
         }
 
         if (token == TK_ELSE) {
-            getNextToken(fp); // "ではない"
+            getNextToken(fp);
             expect(TK_LBRACE, fp);
             Node *else_body = parse_statement_list(fp);
             expect(TK_RBRACE, fp);
@@ -328,6 +458,6 @@ Node *parse_block_statement(FILE *fp) {
         return node;
     }
 
-    error("Expected block statement");
+    error("ブロック文が期待されています");
     return NULL;
 }
