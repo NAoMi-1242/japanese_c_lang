@@ -5,6 +5,6 @@
 #include "parser.h"
 
 // コード生成の実行
-void codegen(Node *node);
+void codegen(Node *node, FILE *fp);
 
 #endif
