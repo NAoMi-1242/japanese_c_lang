@@ -196,52 +196,45 @@ jpc 言語では、C 言語のセミコロン（;）に相当する区切り文�
   ```c
   #include<stdio.h>   // jpcには記述しないが標準で宣言する
 
-  int main(){
-      double jpc_var_1 = (double)3;
-      double jpc_var_2 = (double)0;
-      double jpc_var_3 = (double)0;
-
-      while(jpc_var_2 <= (double)100 && jpc_var_1 > (double)0) {\
+  int main() {
+      double jpc_var_1 = 3.000000;
+      double jpc_var_2 = 0.000000;
+      double jpc_var_3 = 0.000000;
+      while (((jpc_var_2 <= 100.000000) && (jpc_var_1 > 0.000000))) {
           printf("整数を入力してください：");
           scanf("%lf", &jpc_var_3);
-
           jpc_var_2 += jpc_var_3;
-          jpc_var_1 -= (double)1;
+          jpc_var_1 -= 1.000000;
       }
-
-      if(jpc_var_2 >= (double)100) {
+      if ((jpc_var_2 >= 100.000000)) {
           printf("合計値は%fです\n", jpc_var_2);
-      }
-      else if(jpc_var_2 >= (double)50) {
+      } else if ((jpc_var_2 >= 50.000000)) {
           printf("合計値は５０以上１００未満です\n");
-      }
-      else {
+      } else {
           printf("合計値は５０未満です\n");
       }
-
       printf("小数にも対応しています\n");
       printf("１０と掛けたい少数を入力してください：");
       scanf("%lf", &jpc_var_3);
       double jpc_var_4 = jpc_var_3;
-      jpc_var_4 *= (double)10;
+      jpc_var_4 *= 10.000000;
       printf("１０✕%f＝%f\n", jpc_var_3, jpc_var_4);
-
       printf("１０を割りたい少数を入力してください：");
       scanf("%lf", &jpc_var_3);
       jpc_var_4 = jpc_var_3;
-      jpc_var_4 /= (double)10;
+      jpc_var_4 /= 10.000000;
       printf("１０÷%f＝%f\n", jpc_var_3, jpc_var_4);
-
       printf("１００と入力してください：");
       scanf("%lf", &jpc_var_3);
-      while(jpc_var_3 != 100){
+      while ((jpc_var_3 != 100.000000)) {
           printf("%fは１００ではないです\n", jpc_var_3);
           printf("１００と入力してください：");
           scanf("%lf", &jpc_var_3);
       }
-      if(jpc_var_3 == 100) {
+      if ((jpc_var_3 == 100.000000)) {
           printf("%fが＜１００＞になりました\n", jpc_var_3);
       }
+      return 0;
   }
   ```
 
@@ -249,7 +242,7 @@ jpc 言語では、C 言語のセミコロン（;）に相当する区切り文�
 
 コンパイラが内部的に参照する、1 トークン先読み（LL(1)）のために最適化された BNF です。
 
-### 8.1. 字句（トークン）と補助規則の定義
+### 8.1. 字句(トークン)と補助規則の定義
 
 ```
 TOKEN_VARIABLE      ::= """ (任意の文字列) """
@@ -258,21 +251,19 @@ TOKEN_PRINT_LITERAL ::= "「" (文字列/変数埋め込み可) "」"
 TOKEN_WS            ::= (全角空白)
 TOKEN_LN            ::= (改行文字)
 
-ws_or_ln            ::= { TOKEN_WS | TOKEN_LN }
+ws_or_ln            ::= TOKEN_WS | TOKEN_LN
 ```
-
-`ws_or_ln` は、0 個以上の全角空白または改行を表します。
 
 ![トークンと補助規則](images/token+auxiliary.png)
 
 ### 8.2. プログラム全体
 
 ```
-program               ::= "メイン" statements_block
+program               ::= { ws_or_ln } "メイン" statements_block { ws_or_ln }
 
-statements_block      ::= ws_or_ln
-                          "｛" ws_or_ln
-                          { statement ws_or_ln }
+statements_block      ::= { ws_or_ln }
+                          "｛" { ws_or_ln }
+                          { statement { ws_or_ln } }
                           "｝"
 
 statement             ::= simple_statement "。"
@@ -314,9 +305,9 @@ if_statement_block    ::= conditional_block
                           { elseif_statement }
                           [ else_statement ]
 
-elseif_statement      ::= ws_or_ln "ではなく" conditional_block
+elseif_statement      ::= { ws_or_ln } "ではなく" conditional_block
 
-else_statement        ::= ws_or_ln "ではない" statements_block
+else_statement        ::= { ws_or_ln } "ではない" statements_block
 ```
 
 ![if文関連](images/if-elseif-else.png)
@@ -328,10 +319,10 @@ conditional_block     ::= { TOKEN_WS }
                           "（" condition_expression "）"
                           statements_block
 
-condition_expression  ::= ws_or_ln
+condition_expression  ::= { ws_or_ln }
                           condition_term
                           { ws_or_ln "または" ws_or_ln condition_term }
-                          ws_or_ln
+                          { ws_or_ln }
 
 condition_term        ::= condition_factor
                           { ws_or_ln "かつ" ws_or_ln condition_factor }
