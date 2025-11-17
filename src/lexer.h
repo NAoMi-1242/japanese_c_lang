@@ -14,6 +14,10 @@ typedef enum {
     TK_LITERAL,     // 「...」 (数値)
     TK_PRINT_LIT,   // 「...」 (出力用文字列)
 
+    // 空白・改行
+    TK_WS,          // 全角空白 (U+3000)
+    TK_LN,          // 改行 (\n)
+
     // 記号
     TK_LPAR,        // （
     TK_RPAR,        // ）
@@ -58,6 +62,10 @@ typedef enum {
 // グローバル変数（先読みトークン）
 extern char tokenStr[1024];
 extern TokenType token;
+extern int token_line; // トークンが出現した行番号
+
+// トークン名文字列を返すヘルパー
+const char* getTokenName(TokenType type);
 
 // 初期化とトークン取得
 void getNextToken(FILE *fp);

@@ -3,13 +3,7 @@
 #include <string.h>
 #include "parser.h"
 #include "lexer.h"
-
-// --- エラー処理 ---
-void error(const char *fmt) {
-    // 本来は行番号も含めたいが、簡易実装としてトークン情報を表示
-    fprintf(stderr, "Parse Error: %s (Token: %s)\n", fmt, tokenStr);
-    exit(1);
-}
+#include "error.h"
 
 // --- スコープ・変数管理 (Parser側で実施) ---
 // 変数名とIDを紐付けるリスト
@@ -26,9 +20,7 @@ int var_counter = 0;     // グローバルなIDカウンタ
 // 変数を検索 (現在のスコープから順に遡る)
 LVar *find_lvar(char *name) {
     for (LVar *v = locals; v; v = v->next) {
-        if (strcmp(v->name, name) == 0) {
-            return v;
-        }
+        if (strcmp(v->name, name) == 0) return v;
     }
     return NULL;
 }
@@ -36,6 +28,14 @@ LVar *find_lvar(char *name) {
 // 変数を登録 (新規ID発行)
 // 常にリストの先頭に追加する
 int register_lvar(char *name) {
+    // 同一スコープ内での重複宣言チェック
+    // localsの先頭から、次のスコープまでの範囲で同名変数を探す
+    for (LVar *v = locals; v; v = v->next) {
+        if (strcmp(v->name, name) == 0) {
+            error(ERR_SEMANTIC, "変数「%s」は既に宣言されています", name);
+        }
+    }
+    
     LVar *v = calloc(1, sizeof(LVar));
     v->name = strdup(name);
     v->id = ++var_counter; // 新しいIDを発行
@@ -44,7 +44,7 @@ int register_lvar(char *name) {
     return v->id;
 }
 
-// --- ノード生成ヘルパー ---
+// --- ノード生成ヘルパー (実装) ---
 
 Node *new_node(NodeKind kind) {
     Node *node = calloc(1, sizeof(Node));
@@ -69,10 +69,8 @@ Node *new_num(double val) {
 Node *new_var_node(char *name) {
     LVar *lvar = find_lvar(name);
     if (!lvar) {
-        // ★修正: バッファサイズを拡張
-        char msg[512];
-        sprintf(msg, "未定義の変数「%s」が参照されています", name);
-        error(msg);
+        // エラー種別: 意味解析エラー (未定義変数)
+        error(ERR_SEMANTIC, "未定義の変数「%s」が参照されています", name);
     }
 
     Node *node = new_node(ND_VAR);
@@ -82,7 +80,6 @@ Node *new_var_node(char *name) {
 }
 
 // 文字列リテラル解析 (埋め込み変数の解決とフォーマット文字列生成)
-// 例: "合計値は”A”です" -> fmt: "合計値は%fです\n", args: [ID_OF_A]
 Node *new_str_lit_node(char *content) {
     Node *node = new_node(ND_STR_LIT);
     
@@ -115,10 +112,8 @@ Node *new_str_lit_node(char *content) {
                 // 変数を検索しIDを取得
                 LVar *lvar = find_lvar(var_name);
                 if (!lvar) {
-                    // ★修正: バッファサイズを拡張
-                    char msg[512];
-                    sprintf(msg, "文字列内で未定義の変数「%s」が使われています", var_name);
-                    error(msg);
+                    // エラー種別: 意味解析エラー (文字列内で未定義変数)
+                    error(ERR_SEMANTIC, "文字列内で未定義の変数「%s」が使われています", var_name);
                 }
                 
                 // IDリストに追加
@@ -152,312 +147,366 @@ Node *new_str_lit_node(char *content) {
     return node;
 }
 
-// --- トークン操作ヘルパー ---
+// --- トークン操作ヘルパー (expectのみ使用) ---
 
-int consume(TokenType type, FILE *fp) {
-    if (token == type) {
-        getNextToken(fp); 
-        return 1;
-    }
-    return 0;
-}
-
+// 添付資料 の「終端記号」ルールを実装したもの
 void expect(TokenType type, FILE *fp) {
-    if (token != type) {
-        error("予期しないトークンです");
+    if (token == type) {
+        getNextToken(fp);
+    } else {
+        const char *expected_name = getTokenName(type);
+        
+        // トークンの行番号でエラー報告
+        error(
+            ERR_SYNTAX,
+            "「%s」が期待されていましたが、「%s」が代わりに発見されました (Token: %s)", 
+            expected_name, getTokenName(token), tokenStr
+        );
     }
-    getNextToken(fp);
 }
 
-// --- 解析関数プロトタイプ ---
-Node *parse_statement_list(FILE *fp);
+// 空白・改行の消費 (BNF {ws_or_ln} の実装)
+void consumeWsOrLn(FILE *fp) {
+    while (token == TK_WS || token == TK_LN) {
+        getNextToken(fp);
+    }
+}
+// 必須の空白・改行 (BNF ws_or_ln の実装)
+void expectWsOrLn(FILE *fp) {
+    if (token != TK_WS && token != TK_LN) {
+        error(ERR_SYNTAX, "空白または改行が必要です (Token: %s)", tokenStr);
+    }
+    // 1つ以上を消費
+    while (token == TK_WS || token == TK_LN) {
+        getNextToken(fp);
+    }
+}
+
+
+// --- 構文解析関数 (BNF 準拠) ---
+
+// プロトタイプ宣言 (BNFの関数対応)
+Node *parse_program(FILE *fp);
+Node *parse_statements_block(FILE *fp);
 Node *parse_statement(FILE *fp);
 Node *parse_simple_statement(FILE *fp);
-Node *parse_block_statement(FILE *fp);
+Node *parse_loop_or_if_statement(FILE *fp);
+Node *parse_conditional_block(FILE *fp, NodeKind kind);
+Node *parse_if_statement_block(FILE *fp);
+Node *parse_simple_statement_suffix(FILE *fp, char *name);
+Node *parse_simple_statement_suffix_wo(FILE *fp, char *name);
+Node *parse_simple_statement_suffix_ni(FILE *fp, char *name);
+Node *parse_simple_statement_suffix_kara(FILE *fp, char *name);
 Node *parse_condition_expression(FILE *fp);
+Node *parse_condition_term(FILE *fp);
+Node *parse_condition_factor(FILE *fp);
+Node *parse_simple_condition(FILE *fp);
+Node *parse_comparison_op(FILE *fp, Node *lhs, Node *rhs);
 Node *parse_value(FILE *fp);
 
-// --- 実装 ---
-
-// program ::= "メイン" "｛" statement_list "｝"
+// program ::= "メイン" statements_block
 Node *parse_program(FILE *fp) {
+    consumeWsOrLn(fp); // 開始前の空白を許容
     expect(TK_MAIN, fp);
-    expect(TK_LBRACE, fp);
 
     Node *node = new_node(ND_PROGRAM);
-    node->next = parse_statement_list(fp);
-
-    expect(TK_RBRACE, fp);
+    node->next = parse_statements_block(fp);
+    
+    consumeWsOrLn(fp); // 終了後の空白を許容
     return node;
 }
 
-// statement_list ::= { statement }
-Node *parse_statement_list(FILE *fp) {
-    // ★スコープ開始：現在の変数の先頭を覚えておく
+// statements_block ::= { ws_or_ln } "｛" { ws_or_ln } { statement { ws_or_ln } } "｝"
+Node *parse_statements_block(FILE *fp) {
     LVar *scope_snapshot = locals;
+    consumeWsOrLn(fp);
+    expect(TK_LBRACE, fp);
+    consumeWsOrLn(fp);
 
-    Node head;
-    head.next = NULL;
+    Node head; head.next = NULL;
     Node *cur = &head;
 
+    // { statement { ws_or_ln } } の実装
+    // TK_RBRACE が来るまで文をパースし続ける
+    // (calc.c の while (token != END) と同じ思想)
     while (token != TK_RBRACE && token != TK_EOF) {
         cur->next = parse_statement(fp);
         cur = cur->next;
+        consumeWsOrLn(fp); // 文の後の空白・改行
     }
 
-    // ★スコープ終了：リストを巻き戻す (ブロック内変数の破棄)
+    expect(TK_RBRACE, fp);
     locals = scope_snapshot;
-
     return head.next;
 }
 
-// statement
+// statement ::= simple_statement "。" | block_statement
 Node *parse_statement(FILE *fp) {
-    if (token == TK_LOOP || token == TK_IF) {
-        return parse_block_statement(fp);
+    Node *node;
+
+    // 最初に何が来るかで分岐する
+    if (token == TK_VARIABLE || token == TK_PRINT_LIT || token == TK_LITERAL) {
+        // simple_statement の場合
+        node = parse_simple_statement(fp);
+        expect(TK_PERIOD, fp); // "。"
+    } else if (token == TK_LOOP || token == TK_IF) {
+        // block_statement の場合
+        node = parse_loop_or_if_statement(fp);
+    } else {
+        error(ERR_SYNTAX, "文が期待されています (Token: %s)", tokenStr);
     }
-    
-    Node *node = parse_simple_statement(fp);
-    expect(TK_PERIOD, fp);
     return node;
 }
 
-// 値 (リテラル or 変数)
-Node *parse_value(FILE *fp) {
-    if (token == TK_LITERAL) {
-        double val = atof(tokenStr);
-        getNextToken(fp);
-        return new_num(val);
-    } else if (token == TK_VARIABLE) {
-        // 変数ノード生成時に未定義チェックとID解決を行う
-        Node *node = new_var_node(tokenStr);
-        getNextToken(fp);
-        return node;
-    }
-    error("数値または変数が期待されています");
-    return NULL;
-}
-
-// simple_statement
+// simple_statement ::= TOKEN_VARIABLE simple_statement_suffix
+//                    | (TOKEN_PRINT_LITERAL | TOKEN_LITERAL) "と出力する"
 Node *parse_simple_statement(FILE *fp) {
-    // 1. 出力文
-    if (token == TK_LITERAL || token == TK_PRINT_LIT) {
-        Node *val;
-        if (token == TK_LITERAL) {
-            val = new_num(atof(tokenStr));
-        } else {
-            // 文字列リテラル解析 (埋め込み解決)
-            val = new_str_lit_node(tokenStr);
-        }
-        getNextToken(fp);
-        
-        expect(TK_OUTPUT, fp);
-        
-        Node *outNode = new_node(ND_OUTPUT);
-        outNode->lhs = val;
-        return outNode;
-    }
+    Node *node;
 
-    // 2. 変数操作
     if (token == TK_VARIABLE) {
         char *name = strdup(tokenStr);
-        getNextToken(fp); 
-
-        // サフィックス分岐
-        if (token == TK_WO) { // ...を
-            getNextToken(fp);
-            Node *val = parse_value(fp);
-            
-            if (token == TK_DECLARE) { // ...で宣言する
-                getNextToken(fp);
-                
-                // ★宣言処理: ここでのみ新規IDを発行
-                // シャドーイング(同名変数)を許容するならチェック不要
-                // ここでは許容し、新しい変数として登録する
-                int id = register_lvar(name);
-                
-                Node *target = new_node(ND_VAR);
-                target->name = name;
-                target->var_id = id; // 新規ID
-
-                return new_binary(ND_DECLARE, target, val);
-
-            } else if (token == TK_DIV) { // ...でわる
-                getNextToken(fp);
-                // 既存変数の参照 (new_var_nodeではなく手動作成でも良いが、ID取得が必要)
-                // ここではnew_var_nodeを使ってID取得・存在確認済みのノードを得る
-                Node *target = new_var_node(name); 
-                return new_binary(ND_DIV, target, val);
-            }
-        }
-        else if (token == TK_NI) { // ...に
-            getNextToken(fp);
-            
-            // 対象変数は既存のもの (存在チェック)
-            Node *target = new_var_node(name);
-
-            if (token == TK_INPUT) { // 入力する
-                getNextToken(fp);
-                Node *inNode = new_node(ND_INPUT);
-                inNode->lhs = target;
-                return inNode;
-            }
-
-            Node *val = parse_value(fp);
-
-            if (token == TK_ASSIGN) { // を代入する
-                getNextToken(fp);
-                return new_binary(ND_ASSIGN, target, val);
-            } else if (token == TK_ADD) { // をたす
-                getNextToken(fp);
-                return new_binary(ND_ADD, target, val);
-            } else if (token == TK_MUL) { // をかける
-                getNextToken(fp);
-                return new_binary(ND_MUL, target, val);
-            }
-        }
-        else if (token == TK_KARA) { // ...から
-            getNextToken(fp);
-            Node *target = new_var_node(name); // 存在チェック
-            Node *val = parse_value(fp);
-            expect(TK_SUB, fp); 
-            return new_binary(ND_SUB, target, val);
-        }
-    }
-
-    error("不明な文です");
-    return NULL;
-}
-
-// --- 条件式のパース ---
-
-Node *parse_simple_condition(FILE *fp) {
-    // ★修正: 左辺を「変数」固定から「値 (変数or数値)」に変更
-    // これにより「10がAと一緒か」のような記述が可能になる
-    Node *lhs = parse_value(fp);
-
-    expect(TK_GA, fp);
-
-    // 右辺 (parse_value内でチェック済み)
-    Node *rhs = parse_value(fp);
-
-    NodeKind kind;
-    if (token == TK_OP_GE) kind = ND_GE;
-    else if (token == TK_OP_LE) kind = ND_LE;
-    else if (token == TK_OP_GT) kind = ND_GT;
-    else if (token == TK_OP_LT) kind = ND_LT;
-    else if (token == TK_OP_EQ) kind = ND_EQ;
-    else if (token == TK_OP_NE) kind = ND_NE;
-    else error("不明な比較演算子です");
-
-    getNextToken(fp);
-    return new_binary(kind, lhs, rhs);
-}
-
-Node *parse_condition_factor(FILE *fp);
-
-// term { "または" term }
-Node *parse_condition_expression(FILE *fp) {
-    Node *node = parse_condition_factor(fp);
-    while (token == TK_OR) {
         getNextToken(fp);
-        node = new_binary(ND_OR, node, parse_condition_factor(fp));
+        node = parse_simple_statement_suffix(fp, name);
+    } 
+    else if (token == TK_PRINT_LIT || token == TK_LITERAL) {
+        Node *val;
+        if (token == TK_LITERAL) val = new_num(atof(tokenStr));
+        else val = new_str_lit_node(tokenStr);
+        getNextToken(fp);
+        
+        expect(TK_OUTPUT, fp); // 「と出力する」
+        
+        node = new_node(ND_OUTPUT);
+        node->lhs = val;
+    } 
+    else {
+        // ここには来ないはず (parse_statementが分岐制御するため)
+        error(ERR_SYNTAX, "不明な単文です");
     }
     return node;
 }
 
-// factor { "かつ" factor }
+// block_statement ::= "ループ" conditional_block | "もし" if_statement_block
+Node *parse_loop_or_if_statement(FILE *fp) {
+    Node *node;
+    if (token == TK_LOOP) {
+        getNextToken(fp);
+        node = parse_conditional_block(fp, ND_LOOP);
+    } else if (token == TK_IF) {
+        getNextToken(fp);
+        node = parse_if_statement_block(fp);
+    } else {
+        // ここには来ないはず
+        error(ERR_SYNTAX, "不明なブロック文です");
+    }
+    return node;
+}
+
+// conditional_block ::= { TOKEN_WS } "（" condition_expression "）" statements_block
+// (NodeKind kind は、ND_LOOP か ND_IF を受け取る)
+Node *parse_conditional_block(FILE *fp, NodeKind kind) {
+    while(token == TK_WS) getNextToken(fp); // { TOKEN_WS }
+    
+    expect(TK_LPAR, fp);
+    Node *cond = parse_condition_expression(fp);
+    expect(TK_RPAR, fp);
+    
+    Node *body = parse_statements_block(fp);
+
+    Node *node = new_node(kind);
+    node->cond = cond;
+    node->then = body;
+    return node;
+}
+
+// if_statement_block ::= conditional_block { elseif_statement } [ else_statement ]
+Node *parse_if_statement_block(FILE *fp) {
+    Node *node = parse_conditional_block(fp, ND_IF);
+    Node *curr = node;
+
+    // { elseif_statement }
+    // 続く限り "ではなく" をパースする (whileループ)
+    while(1) {
+        consumeWsOrLn(fp); // { ws_or_ln }
+        if (token == TK_ELSEIF) {
+            getNextToken(fp);
+            Node *elif_node = parse_conditional_block(fp, ND_ELSEIF);
+            curr->els = elif_node;
+            curr = elif_node;
+        } else {
+            break; // "ではなく" がなければループ終了
+        }
+    }
+    
+    // [ else_statement ]
+    // "ではない" が1回来るかもしれない (if文)
+    consumeWsOrLn(fp); // { ws_or_ln }
+    if (token == TK_ELSE) {
+        getNextToken(fp);
+        curr->els = parse_statements_block(fp);
+    }
+
+    return node;
+}
+
+// simple_statement_suffix ::= "を" ... | "に" ... | "から" ...
+Node *parse_simple_statement_suffix(FILE *fp, char *name) {
+    if (token == TK_WO) {
+        getNextToken(fp);
+        return parse_simple_statement_suffix_wo(fp, name);
+    } else if (token == TK_NI) {
+        getNextToken(fp);
+        return parse_simple_statement_suffix_ni(fp, name);
+    } else if (token == TK_KARA) {
+        getNextToken(fp);
+        return parse_simple_statement_suffix_kara(fp, name);
+    } else {
+        error(ERR_SYNTAX, "「を」「に」「から」が期待されています");
+    }
+    return NULL;
+}
+
+// simple_statement_suffix_wo ::= (TOKEN_LITERAL | TOKEN_VARIABLE) "で宣言する"
+//                       | (TOKEN_LITERAL | TOKEN_VARIABLE) "でわる"
+Node *parse_simple_statement_suffix_wo(FILE *fp, char *name) {
+    Node *val = parse_value(fp);
+
+    if (token == TK_DECLARE) {
+        getNextToken(fp);
+        int id = register_lvar(name);
+        Node *target = new_node(ND_VAR);
+        target->name = name;
+        target->var_id = id;
+        return new_binary(ND_DECLARE, target, val);
+    } else if (token == TK_DIV) {
+        getNextToken(fp);
+        Node *target = new_var_node(name);
+        return new_binary(ND_DIV, target, val);
+    } else {
+        error(ERR_SYNTAX, "「で宣言する」または「でわる」が期待されています");
+    }
+    return NULL;
+}
+
+// simple_statement_suffix_ni ::= ...
+Node *parse_simple_statement_suffix_ni(FILE *fp, char *name) {
+    Node *target = new_var_node(name);
+
+    if (token == TK_INPUT) {
+        getNextToken(fp);
+        Node *node = new_node(ND_INPUT);
+        node->lhs = target;
+        return node;
+    } 
+    
+    // "入力する" ではない場合、値が来るはず
+    Node *val = parse_value(fp);
+
+    if (token == TK_ASSIGN) {
+        getNextToken(fp);
+        return new_binary(ND_ASSIGN, target, val);
+    } else if (token == TK_ADD) {
+        getNextToken(fp);
+        return new_binary(ND_ADD, target, val);
+    } else if (token == TK_MUL) {
+        getNextToken(fp);
+        return new_binary(ND_MUL, target, val);
+    } else {
+        error(ERR_SYNTAX, "「入力する」「を代入する」「をたす」「をかける」が期待されています");
+    }
+    return NULL;
+}
+
+// simple_statement_suffix_kara ::= (TOKEN_LITERAL | TOKEN_VARIABLE) "をひく"
+Node *parse_simple_statement_suffix_kara(FILE *fp, char *name) {
+    Node *target = new_var_node(name);
+    Node *val = parse_value(fp);
+    expect(TK_SUB, fp); // 「をひく」
+    return new_binary(ND_SUB, target, val);
+}
+
+// --- 条件式 (calc.c と同じ階層構造) ---
+
+// condition_expression ::= {ws_or_ln} condition_term { ws_or_ln "または" ws_or_ln condition_term } {ws_or_ln}
+Node *parse_condition_expression(FILE *fp) {
+    consumeWsOrLn(fp);
+    Node *node = parse_condition_term(fp);
+    consumeWsOrLn(fp);
+
+    while (token == TK_OR) {
+        getNextToken(fp);
+        expectWsOrLn(fp); // 「または」の後は空白必須
+        node = new_binary(ND_OR, node, parse_condition_term(fp));
+        consumeWsOrLn(fp);
+    }
+    return node;
+}
+
+// condition_term ::= condition_factor { ws_or_ln "かつ" ws_or_ln condition_factor }
 Node *parse_condition_term(FILE *fp) {
+    Node *node = parse_condition_factor(fp);
+    consumeWsOrLn(fp);
+
+    while (token == TK_AND) {
+        getNextToken(fp);
+        expectWsOrLn(fp); // 「かつ」の後は空白必須
+        node = new_binary(ND_AND, node, parse_condition_factor(fp));
+        consumeWsOrLn(fp);
+    }
+    return node;
+}
+
+// condition_factor ::= simple_condition | "（" condition_expression "）"
+Node *parse_condition_factor(FILE *fp) {
     Node *node;
     if (token == TK_LPAR) {
         getNextToken(fp);
         node = parse_condition_expression(fp);
         expect(TK_RPAR, fp);
-    } else {
+    } 
+    // simple_condition の開始トークンは TK_LITERAL か TK_VARIABLE
+    else if (token == TK_LITERAL || token == TK_VARIABLE) {
         node = parse_simple_condition(fp);
-    }
-
-    while (token == TK_AND) {
-        getNextToken(fp);
-        Node *rhs;
-        if (token == TK_LPAR) {
-            getNextToken(fp);
-            rhs = parse_condition_expression(fp);
-            expect(TK_RPAR, fp);
-        } else {
-            rhs = parse_simple_condition(fp);
-        }
-        node = new_binary(ND_AND, node, rhs);
+    } 
+    else {
+        error(ERR_SYNTAX, "条件式または「（」が期待されています");
     }
     return node;
 }
 
-// factorとtermの呼び出し階層を整理（OR -> AND -> Simple）
-Node *parse_condition_factor(FILE *fp) {
-    return parse_condition_term(fp);
+// simple_condition ::= (TOKEN_LITERAL | TOKEN_VARIABLE) "が" (TOKEN_LITERAL | TOKEN_VARIABLE) comparison_op
+Node *parse_simple_condition(FILE *fp) {
+    Node *lhs = parse_value(fp);
+    expect(TK_GA, fp);
+    Node *rhs = parse_value(fp);
+    return parse_comparison_op(fp, lhs, rhs);
 }
 
+// comparison_op ::= "以上か" | ...
+Node *parse_comparison_op(FILE *fp, Node *lhs, Node *rhs) {
+    if (token == TK_OP_GE) { getNextToken(fp); return new_binary(ND_GE, lhs, rhs); }
+    if (token == TK_OP_LE) { getNextToken(fp); return new_binary(ND_LE, lhs, rhs); }
+    if (token == TK_OP_GT) { getNextToken(fp); return new_binary(ND_GT, lhs, rhs); }
+    if (token == TK_OP_LT) { getNextToken(fp); return new_binary(ND_LT, lhs, rhs); }
+    if (token == TK_OP_EQ) { getNextToken(fp); return new_binary(ND_EQ, lhs, rhs); }
+    if (token == TK_OP_NE) { getNextToken(fp); return new_binary(ND_NE, lhs, rhs); }
+    
+    error(ERR_SYNTAX, "比較演算子（「以上か」など）が期待されています");
+    return NULL;
+}
 
-// block_statement
-Node *parse_block_statement(FILE *fp) {
-    if (token == TK_LOOP) {
+// parse_value ::= TOKEN_LITERAL | TOKEN_VARIABLE
+Node *parse_value(FILE *fp) {
+    if (token == TK_LITERAL) {
+        Node *node = new_num(atof(tokenStr));
         getNextToken(fp);
-        expect(TK_LPAR, fp);
-        Node *cond = parse_condition_expression(fp);
-        expect(TK_RPAR, fp);
-        expect(TK_LBRACE, fp);
-        Node *body = parse_statement_list(fp);
-        expect(TK_RBRACE, fp);
-
-        Node *node = new_node(ND_LOOP);
-        node->cond = cond;
-        node->then = body;
         return node;
-    }
-
-    if (token == TK_IF) {
+    } else if (token == TK_VARIABLE) {
+        Node *node = new_var_node(tokenStr);
         getNextToken(fp);
-        expect(TK_LPAR, fp);
-        Node *cond = parse_condition_expression(fp);
-        expect(TK_RPAR, fp);
-        expect(TK_LBRACE, fp);
-        Node *then = parse_statement_list(fp);
-        expect(TK_RBRACE, fp);
-
-        Node *node = new_node(ND_IF);
-        node->cond = cond;
-        node->then = then;
-        
-        // else if / else の連鎖処理
-        Node *curr = node;
-        while (token == TK_ELSEIF) {
-            getNextToken(fp); 
-            expect(TK_LPAR, fp);
-            Node *elif_cond = parse_condition_expression(fp);
-            expect(TK_RPAR, fp);
-            expect(TK_LBRACE, fp);
-            Node *elif_body = parse_statement_list(fp);
-            expect(TK_RBRACE, fp);
-
-            Node *elif_node = new_node(ND_ELSEIF); 
-            elif_node->cond = elif_cond;
-            elif_node->then = elif_body;
-            
-            curr->els = elif_node;
-            curr = elif_node;
-        }
-
-        if (token == TK_ELSE) {
-            getNextToken(fp);
-            expect(TK_LBRACE, fp);
-            Node *else_body = parse_statement_list(fp);
-            expect(TK_RBRACE, fp);
-            curr->els = else_body;
-        }
-
         return node;
+    } else {
+        error(ERR_SYNTAX, "数値または変数が期待されています");
     }
-
-    error("ブロック文が期待されています");
     return NULL;
 }
