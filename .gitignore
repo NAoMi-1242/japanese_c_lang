@@ -4,6 +4,7 @@
 
 ref/
 !Dockerfile
+!Makefile
 *.o
 *.exe
 *.out
