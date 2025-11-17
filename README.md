@@ -23,3 +23,14 @@ docker-compose build
 ```bash
 docker-compose run --rm dev
 ```
+
+### 5. jpcのコンパイル
+```bash
+make
+```
+
+### 5. 実行
+```bash
+./jpc tests/test.jpc -o test
+./test
+```
