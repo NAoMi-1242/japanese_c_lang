@@ -41,7 +41,7 @@ void ungetCh(int c) {
     if (c != EOF && pushback_count < 20) {
         pushback_buf[pushback_count++] = c;
     } else if (pushback_count >= 20) {
-        error(ERR_SYSTEM, "Pushback buffer overflow");
+        error(ERR_SYSTEM, "プッシュバックバッファがオーバーフローしました");
     }
 }
 
@@ -186,6 +186,49 @@ int convertZenkakuDot(const char *utf8_char, char *out) {
     return 0;
 }
 
+// トークン種別を文字列に変換するデバッグ用関数
+const char* getTokenName(TokenType type) {
+    switch (type) {
+        case TK_EOF:         return "TK_EOF";
+        case TK_MAIN:        return "メイン";
+        case TK_VARIABLE:    return "変数（”...”）";
+        case TK_LITERAL:     return "数値リテラル";
+        case TK_PRINT_LIT:   return "出力リテラル";
+        case TK_WS:          return "全角空白（　）";
+        case TK_LN:          return "改行（\\n）";
+        case TK_LPAR:        return "（";
+        case TK_RPAR:        return "）";
+        case TK_LBRACE:      return "｛";
+        case TK_RBRACE:      return "｝";
+        case TK_PERIOD:      return "。";
+        case TK_WO:          return "を";
+        case TK_NI:          return "に";
+        case TK_KARA:        return "から";
+        case TK_GA:          return "が";
+        case TK_DECLARE:     return "で宣言する";
+        case TK_DIV:         return "でわる";
+        case TK_ASSIGN:      return "を代入する";
+        case TK_ADD:         return "をたす";
+        case TK_MUL:         return "をかける";
+        case TK_SUB:         return "をひく";
+        case TK_INPUT:       return "入力する";
+        case TK_OUTPUT:      return "と出力する";
+        case TK_LOOP:        return "ループ";
+        case TK_IF:          return "もし";
+        case TK_ELSEIF:      return "ではなく";
+        case TK_ELSE:        return "ではない";
+        case TK_OP_GE:       return "以上か";
+        case TK_OP_LE:       return "以下か";
+        case TK_OP_GT:       return "より大きいか";
+        case TK_OP_LT:       return "より小さいか";
+        case TK_OP_EQ:       return "と一緒か";
+        case TK_OP_NE:       return "と違うか";
+        case TK_AND:         return "かつ";
+        case TK_OR:          return "または";
+        default:             return "UNKNOWN_TOKEN";
+    }
+}
+
 // --- メイン解析関数 ---
 void getNextToken(FILE *fp) {
     char charBuf[5];
@@ -242,7 +285,7 @@ void getNextToken(FILE *fp) {
     // --- キーワード分岐 ---
     if (strcmp(charBuf, "メ") == 0) { 
         if (checkKeyword(fp, "イン")) { token = TK_MAIN; return; }
-        error(ERR_LEXER, "Unknown keyword starting with 'メ' -> %s", charBuf);
+        error(ERR_LEXER, "「メ」で始まる不明なキーワードです -> %s", charBuf);
     }
 
     if (strcmp(charBuf, "で") == 0) {
@@ -252,9 +295,9 @@ void getNextToken(FILE *fp) {
         if (checkKeyword(fp, "は")) { 
             if (checkKeyword(fp, "なく")) { token = TK_ELSEIF; return; }
             if (checkKeyword(fp, "ない")) { token = TK_ELSE; return; }
-            error(ERR_LEXER, "Unknown keyword starting with 'で' -> %s", charBuf);
+            error(ERR_LEXER, "「で」で始まる不明なキーワードです -> %s", charBuf);
         }
-        error(ERR_LEXER, "Unknown keyword starting with 'で' -> %s", charBuf);
+        error(ERR_LEXER, "「で」で始まる不明なキーワードです -> %s", charBuf);
     }
 
     if (strcmp(charBuf, "を") == 0) {
@@ -268,49 +311,49 @@ void getNextToken(FILE *fp) {
     if (strcmp(charBuf, "か") == 0) {
         if (checkKeyword(fp, "ら")) { token = TK_KARA; return; }
         if (checkKeyword(fp, "つ")) { token = TK_AND; return; }
-        error(ERR_LEXER, "Unknown keyword starting with 'か' -> %s", charBuf);
+        error(ERR_LEXER, "「か」で始まる不明なキーワードです -> %s", charBuf);
     }
 
     if (strcmp(charBuf, "ル") == 0) { 
         if (checkKeyword(fp, "ープ")) { token = TK_LOOP; return; }
-        error(ERR_LEXER, "Unknown keyword starting with 'ル' -> %s", charBuf);
+        error(ERR_LEXER, "「ル」で始まる不明なキーワードです -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "も") == 0) { 
         if (checkKeyword(fp, "し")) { token = TK_IF; return; }
-        error(ERR_LEXER, "Unknown keyword starting with 'も' -> %s", charBuf);
+        error(ERR_LEXER, "「も」で始まる不明なキーワードです -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "入") == 0) { 
         if (checkKeyword(fp, "力する")) { token = TK_INPUT; return; }
-        error(ERR_LEXER, "Unknown keyword starting with '入' -> %s", charBuf);
+        error(ERR_LEXER, "「入」で始まる不明なキーワードです -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "と") == 0) { 
         if (checkKeyword(fp, "出力する")) { token = TK_OUTPUT; return; }
         if (checkKeyword(fp, "一緒か"))   { token = TK_OP_EQ; return; }
         if (checkKeyword(fp, "違うか"))   { token = TK_OP_NE; return; }
-        error(ERR_LEXER, "Unknown keyword starting with 'と' -> %s", charBuf);
+        error(ERR_LEXER, "「と」で始まる不明なキーワードです -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "ま") == 0) { 
         if (checkKeyword(fp, "たは")) { token = TK_OR; return; }
-        error(ERR_LEXER, "Unknown keyword starting with 'ま' -> %s", charBuf);
+        error(ERR_LEXER, "「ま」で始まる不明なキーワードです -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "以") == 0) {
         if (checkKeyword(fp, "上か")) { token = TK_OP_GE; return; }
         if (checkKeyword(fp, "下か")) { token = TK_OP_LE; return; }
-        error(ERR_LEXER, "Unknown keyword starting with '以' -> %s", charBuf);
+        error(ERR_LEXER, "「以」で始まる不明なキーワードです -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "よ") == 0) { 
         if (checkKeyword(fp, "り")) { 
             if (checkKeyword(fp, "大きいか")) { token = TK_OP_GT; return; }
             if (checkKeyword(fp, "小さいか")) { token = TK_OP_LT; return; }
-            error(ERR_LEXER, "Unknown keyword starting with 'より' -> %s", charBuf);
+            error(ERR_LEXER, "「より」で始まる不明なキーワードです -> %s", charBuf);
         }
-        error(ERR_LEXER, "Unknown keyword starting with 'よ' -> %s", charBuf);
+        error(ERR_LEXER, "「よ」で始まる不明なキーワードです -> %s", charBuf);
     }
 
     // --- 変数 ("...") ---
@@ -319,10 +362,10 @@ void getNextToken(FILE *fp) {
         tokenStr[0] = '\0';
         while (1) {
             if (!readUTF8Char(fp, charBuf, 0)) { 
-                error(ERR_LEXER, "Unexpected EOF inside variable name");
+                error(ERR_LEXER, "変数名の途中でファイルが終了しました");
             }
             if (strcmp(charBuf, "\n") == 0 || strcmp(charBuf, "\r") == 0) {
-                error(ERR_LEXER, "Unclosed variable quote (”)");
+                error(ERR_LEXER, "変数名の引用符（”）が閉じられていません");
             }
             if (strcmp(charBuf, "”") == 0) break;
             strcat(tokenStr, charBuf);
@@ -339,15 +382,15 @@ void getNextToken(FILE *fp) {
 
         while (1) {
             if (!readUTF8Char(fp, charBuf, 0)) {
-                error(ERR_LEXER, "Unexpected EOF inside literal");
+                error(ERR_LEXER, "文字列リテラルの途中でファイルが終了しました");
             }
             if (strcmp(charBuf, "\n") == 0 || strcmp(charBuf, "\r") == 0) {
-                error(ERR_LEXER, "Unclosed literal quote (「)");
+                error(ERR_LEXER, "文字列リテラルの引用符（「）が閉じられていません");
             }
             if (strcmp(charBuf, "」") == 0) break;
 
             if (strlen(rawStr) >= 1000) {
-                error(ERR_LEXER, "Literal is too long");
+                error(ERR_LEXER, "文字列リテラルが長すぎます");
             }
 
             strcat(rawStr, charBuf);
@@ -388,5 +431,5 @@ void getNextToken(FILE *fp) {
         return;
     }
 
-    error(ERR_LEXER, "Unknown token: %s", charBuf);
+    error(ERR_LEXER, "不明なトークンです: %s", charBuf);
 }

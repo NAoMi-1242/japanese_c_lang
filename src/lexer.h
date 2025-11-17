@@ -63,6 +63,9 @@ typedef enum {
 extern char tokenStr[1024];
 extern TokenType token;
 
+// トークン名文字列を返すヘルパー
+const char* getTokenName(TokenType type);
+
 // 初期化とトークン取得
 void getNextToken(FILE *fp);
 
