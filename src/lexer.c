@@ -10,6 +10,7 @@ extern int current_line; // error.hでextern宣言されたものを使う
 
 char tokenStr[1024];
 TokenType token;
+int token_line; // トークンが出現した行番号
 
 // バッファリング用 (その他省略)
 static int pushback_buf[20]; 
@@ -232,6 +233,9 @@ const char* getTokenName(TokenType type) {
 // --- メイン解析関数 ---
 void getNextToken(FILE *fp) {
     char charBuf[5];
+    
+    // トークン開始時の行番号を記録
+    token_line = current_line;
     
     // コメントを明示的にスキップ
     while (1) {

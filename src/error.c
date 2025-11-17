@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include "error.h"
+#include "lexer.h"
 
 // 行番号の初期値
 int current_line = 1;
@@ -26,7 +27,8 @@ void error(ErrorType type, const char *fmt, ...) {
 
     // 標準エラー出力へ
     // \033[1;31m ... \033[0m は赤字ボールドで表示するためのコード
-    fprintf(stderr, "\033[1;31m[%s]\033[0m %d行目: ", label, current_line);
+    // token_lineを使用してトークンが出現した行番号を表示
+    fprintf(stderr, "\033[1;31m[%s]\033[0m %d行目: ", label, token_line);
     vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
 

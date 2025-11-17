@@ -62,6 +62,7 @@ typedef enum {
 // グローバル変数（先読みトークン）
 extern char tokenStr[1024];
 extern TokenType token;
+extern int token_line; // トークンが出現した行番号
 
 // トークン名文字列を返すヘルパー
 const char* getTokenName(TokenType type);

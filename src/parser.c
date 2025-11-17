@@ -156,6 +156,7 @@ void expect(TokenType type, FILE *fp) {
     } else {
         const char *expected_name = getTokenName(type);
         
+        // トークンの行番号でエラー報告
         error(
             ERR_SYNTAX,
             "「%s」が期待されていましたが、「%s」が代わりに発見されました (Token: %s)", 
@@ -243,7 +244,6 @@ Node *parse_statements_block(FILE *fp) {
 Node *parse_statement(FILE *fp) {
     Node *node;
 
-    // 添付資料 の「要素の選択」ルール
     // 最初に何が来るかで分岐する
     if (token == TK_VARIABLE || token == TK_PRINT_LIT || token == TK_LITERAL) {
         // simple_statement の場合
@@ -263,7 +263,6 @@ Node *parse_statement(FILE *fp) {
 Node *parse_simple_statement(FILE *fp) {
     Node *node;
 
-    // 添付資料 の「要素の選択」ルール
     if (token == TK_VARIABLE) {
         char *name = strdup(tokenStr);
         getNextToken(fp);
