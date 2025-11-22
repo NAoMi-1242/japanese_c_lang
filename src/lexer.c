@@ -8,11 +8,10 @@
 // グローバル変数の実体定義
 extern int current_line; // error.hでextern宣言されたものを使う
 
-char tokenStr[1024];
-TokenType token;
-int token_line; // トークンが出現した行番号
+// 現在のトークン
+Token current_token;
 
-// バッファリング用 (その他省略)
+// バッファリング用
 static int pushback_buf[20]; 
 static int pushback_count = 0;
 
@@ -196,7 +195,7 @@ const char* getTokenName(TokenType type) {
         case TK_LITERAL:     return "数値リテラル";
         case TK_PRINT_LIT:   return "出力リテラル";
         case TK_WS:          return "全角空白（　）";
-        case TK_LN:          return "改行（\\n）";
+        case TK_LN:          return "改行";
         case TK_LPAR:        return "（";
         case TK_RPAR:        return "）";
         case TK_LBRACE:      return "｛";
@@ -234,17 +233,14 @@ const char* getTokenName(TokenType type) {
 void getNextToken(FILE *fp) {
     char charBuf[5];
     
-    // トークン開始時の行番号を記録
-    token_line = current_line;
-    
-    // コメントを明示的にスキップ
+    // コメントスキップと最初の1文字読み込み
     while (1) {
         if (!readUTF8Char(fp, charBuf, 1)) {  // 半角空白・タブをスキップ
-            token = TK_EOF;
+            current_token.type = TK_EOF;
             return;
         }
         
-        // コメント判定（最初の1文字を読んだ時点でチェック）
+        // コメント判定
         unsigned char u0 = (unsigned char)charBuf[0];
         if (u0 == 0xEF) {
             // pushback してcheckCommentOutで判定
@@ -259,7 +255,7 @@ void getNextToken(FILE *fp) {
             
             // 再度読み直し
             if (!readUTF8Char(fp, charBuf, 1)) {
-                token = TK_EOF;
+                current_token.type = TK_EOF;
                 return;
             }
         }
@@ -267,94 +263,108 @@ void getNextToken(FILE *fp) {
         break;  // コメントでない文字が来たらループ終了
     }
     
-    strcpy(tokenStr, charBuf);
+    // 行番号の仮決定
+    int token_line_fix = current_line;
+    strcpy(current_token.str, charBuf);
 
     // --- 改行 ---
-    if (strcmp(charBuf, "\n") == 0) { token = TK_LN; return; }
+    if (strcmp(charBuf, "\n") == 0) { 
+        current_token.type = TK_LN;
+        // 改行トークンは「読み終わった行」に属する
+        current_token.line = token_line_fix - 1;
+        
+        // エラー表示用に可視化された文字列 "\\n" をセット
+        strcpy(current_token.str, "\\n");
+        
+        return; 
+    }
+
+    // その他のトークンは現在の行番号を採用
+    current_token.line = token_line_fix;
 
     // --- 全角空白 (E3 80 80) ---
-    if (strcmp(charBuf, "　") == 0) { token = TK_WS; return; }
+    if (strcmp(charBuf, "　") == 0) { current_token.type = TK_WS; return; }
 
     // --- 記号 ---
-    if (strcmp(charBuf, "（") == 0) { token = TK_LPAR; return; }
-    if (strcmp(charBuf, "）") == 0) { token = TK_RPAR; return; }
-    if (strcmp(charBuf, "｛") == 0) { token = TK_LBRACE; return; }
-    if (strcmp(charBuf, "｝") == 0) { token = TK_RBRACE; return; }
-    if (strcmp(charBuf, "。") == 0) { token = TK_PERIOD; return; }
+    if (strcmp(charBuf, "（") == 0) { current_token.type = TK_LPAR; return; }
+    if (strcmp(charBuf, "）") == 0) { current_token.type = TK_RPAR; return; }
+    if (strcmp(charBuf, "｛") == 0) { current_token.type = TK_LBRACE; return; }
+    if (strcmp(charBuf, "｝") == 0) { current_token.type = TK_RBRACE; return; }
+    if (strcmp(charBuf, "。") == 0) { current_token.type = TK_PERIOD; return; }
 
     // --- 助詞 ---
-    if (strcmp(charBuf, "に") == 0) { token = TK_NI; return; }
-    if (strcmp(charBuf, "が") == 0) { token = TK_GA; return; }
+    if (strcmp(charBuf, "に") == 0) { current_token.type = TK_NI; return; }
+    if (strcmp(charBuf, "が") == 0) { current_token.type = TK_GA; return; }
     
     // --- キーワード分岐 ---
     if (strcmp(charBuf, "メ") == 0) { 
-        if (checkKeyword(fp, "イン")) { token = TK_MAIN; return; }
+        if (checkKeyword(fp, "イン")) { current_token.type = TK_MAIN; return; }
         error(ERR_LEXER, "「メ」で始まる不明なキーワードです -> %s", charBuf);
     }
 
     if (strcmp(charBuf, "で") == 0) {
-        if (checkKeyword(fp, "宣言する")) { token = TK_DECLARE; return; }
-        if (checkKeyword(fp, "わる"))     { token = TK_DIV; return; }
+        if (checkKeyword(fp, "宣言する")) { current_token.type = TK_DECLARE; return; }
+        if (checkKeyword(fp, "わる"))     { current_token.type = TK_DIV; return; }
         
         if (checkKeyword(fp, "は")) { 
-            if (checkKeyword(fp, "なく")) { token = TK_ELSEIF; return; }
-            if (checkKeyword(fp, "ない")) { token = TK_ELSE; return; }
+            if (checkKeyword(fp, "なく")) { current_token.type = TK_ELSEIF; return; }
+            if (checkKeyword(fp, "ない")) { current_token.type = TK_ELSE; return; }
             error(ERR_LEXER, "「で」で始まる不明なキーワードです -> %s", charBuf);
         }
         error(ERR_LEXER, "「で」で始まる不明なキーワードです -> %s", charBuf);
     }
 
     if (strcmp(charBuf, "を") == 0) {
-        if (checkKeyword(fp, "代入する")) { token = TK_ASSIGN; return; }
-        if (checkKeyword(fp, "たす"))     { token = TK_ADD; return; }
-        if (checkKeyword(fp, "かける"))   { token = TK_MUL; return; }
-        if (checkKeyword(fp, "ひく"))     { token = TK_SUB; return; }
-        token = TK_WO; return; 
+        if (checkKeyword(fp, "代入する")) { current_token.type = TK_ASSIGN; return; }
+        if (checkKeyword(fp, "たす"))     { current_token.type = TK_ADD; return; }
+        if (checkKeyword(fp, "かける"))   { current_token.type = TK_MUL; return; }
+        if (checkKeyword(fp, "ひく"))     { current_token.type = TK_SUB; return; }
+        current_token.type = TK_WO; return; 
     }
     
     if (strcmp(charBuf, "か") == 0) {
-        if (checkKeyword(fp, "ら")) { token = TK_KARA; return; }
-        if (checkKeyword(fp, "つ")) { token = TK_AND; return; }
+        if (checkKeyword(fp, "ら")) { current_token.type = TK_KARA; return; }
+        if (checkKeyword(fp, "つ")) { current_token.type = TK_AND; return; }
         error(ERR_LEXER, "「か」で始まる不明なキーワードです -> %s", charBuf);
     }
 
     if (strcmp(charBuf, "ル") == 0) { 
-        if (checkKeyword(fp, "ープ")) { token = TK_LOOP; return; }
+        if (checkKeyword(fp, "ープ")) { current_token.type = TK_LOOP; return; }
         error(ERR_LEXER, "「ル」で始まる不明なキーワードです -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "も") == 0) { 
-        if (checkKeyword(fp, "し")) { token = TK_IF; return; }
+        if (checkKeyword(fp, "し")) { current_token.type = TK_IF; return; }
         error(ERR_LEXER, "「も」で始まる不明なキーワードです -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "入") == 0) { 
-        if (checkKeyword(fp, "力する")) { token = TK_INPUT; return; }
+        if (checkKeyword(fp, "力する")) { current_token.type = TK_INPUT; return; }
         error(ERR_LEXER, "「入」で始まる不明なキーワードです -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "と") == 0) { 
-        if (checkKeyword(fp, "出力する")) { token = TK_OUTPUT; return; }
-        if (checkKeyword(fp, "一緒か"))   { token = TK_OP_EQ; return; }
-        if (checkKeyword(fp, "違うか"))   { token = TK_OP_NE; return; }
+        if (checkKeyword(fp, "出力する")) { current_token.type = TK_OUTPUT; return; }
+        if (checkKeyword(fp, "一緒か"))   { current_token.type = TK_OP_EQ; return; }
+        if (checkKeyword(fp, "違うか"))   { current_token.type = TK_OP_NE; return; }
         error(ERR_LEXER, "「と」で始まる不明なキーワードです -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "ま") == 0) { 
-        if (checkKeyword(fp, "たは")) { token = TK_OR; return; }
+        if (checkKeyword(fp, "たは")) { current_token.type = TK_OR; return; }
         error(ERR_LEXER, "「ま」で始まる不明なキーワードです -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "以") == 0) {
-        if (checkKeyword(fp, "上か")) { token = TK_OP_GE; return; }
-        if (checkKeyword(fp, "下か")) { token = TK_OP_LE; return; }
+        if (checkKeyword(fp, "上か")) { current_token.type = TK_OP_GE; return; }
+        if (checkKeyword(fp, "下か")) { current_token.type = TK_OP_LE; return; }
         error(ERR_LEXER, "「以」で始まる不明なキーワードです -> %s", charBuf);
     }
     
     if (strcmp(charBuf, "よ") == 0) { 
         if (checkKeyword(fp, "り")) { 
-            if (checkKeyword(fp, "大きいか")) { token = TK_OP_GT; return; }
-            if (checkKeyword(fp, "小さいか")) { token = TK_OP_LT; return; }
+            if (checkKeyword(fp, "大きいか")) { current_token.type = TK_OP_GT; return; }
+            if (checkKeyword(fp, "小さいか")) { current_token.type = TK_OP_LT; return; }
             error(ERR_LEXER, "「より」で始まる不明なキーワードです -> %s", charBuf);
         }
         error(ERR_LEXER, "「よ」で始まる不明なキーワードです -> %s", charBuf);
@@ -362,8 +372,8 @@ void getNextToken(FILE *fp) {
 
     // --- 変数 ("...") ---
     if (strcmp(charBuf, "”") == 0) {
-        token = TK_VARIABLE;
-        tokenStr[0] = '\0';
+        current_token.type = TK_VARIABLE;
+        current_token.str[0] = '\0';
         while (1) {
             if (!readUTF8Char(fp, charBuf, 0)) { 
                 error(ERR_LEXER, "変数名の途中でファイルが終了しました");
@@ -372,7 +382,7 @@ void getNextToken(FILE *fp) {
                 error(ERR_LEXER, "変数名の引用符（”）が閉じられていません");
             }
             if (strcmp(charBuf, "”") == 0) break;
-            strcat(tokenStr, charBuf);
+            strcat(current_token.str, charBuf);
         }
         return;
     }
@@ -422,15 +432,15 @@ void getNextToken(FILE *fp) {
         if (is_pure_number && dot_count <= 1) {
             int len = strlen(numStr);
             if (len > 0 && numStr[0] != '.' && numStr[len-1] != '.') {
-                token = TK_LITERAL;
-                strcpy(tokenStr, numStr);
+                current_token.type = TK_LITERAL;
+                strcpy(current_token.str, numStr);
             } else {
-                token = TK_PRINT_LIT;
-                strcpy(tokenStr, rawStr);
+                current_token.type = TK_PRINT_LIT;
+                strcpy(current_token.str, rawStr);
             }
         } else {
-            token = TK_PRINT_LIT;
-            strcpy(tokenStr, rawStr);
+            current_token.type = TK_PRINT_LIT;
+            strcpy(current_token.str, rawStr);
         }
         return;
     }
