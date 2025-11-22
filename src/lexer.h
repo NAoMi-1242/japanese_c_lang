@@ -59,10 +59,15 @@ typedef enum {
 
 } TokenType;
 
-// グローバル変数（先読みトークン）
-extern char tokenStr[1024];
-extern TokenType token;
-extern int token_line; // トークンが出現した行番号
+// トークン構造体の定義
+typedef struct {
+    TokenType type;   // トークンの種類
+    char str[1024];   // トークンの文字列
+    int line;         // このトークンがある行番号
+} Token;
+
+// 現在のトークン（グローバル変数）
+extern Token current_token;
 
 // トークン名文字列を返すヘルパー
 const char* getTokenName(TokenType type);

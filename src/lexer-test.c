@@ -21,16 +21,16 @@ int main(int argc, char *argv[]) {
 
     int count = 0;
     // ★ループ条件：getNextTokenの戻り値ではなく、グローバル変数をチェック
-    while (token != TK_EOF) {
-        printf("[%03d] Token: %-30s", ++count, getTokenName(token));
+    while (current_token.type != TK_EOF) {
+        printf("[%03d] Token: %-30s", ++count, getTokenName(current_token.type));
         
-        if (token == TK_VARIABLE || token == TK_LITERAL || token == TK_PRINT_LIT) {
-            printf(" Value: %s", tokenStr);
+        if (current_token.type == TK_VARIABLE || current_token.type == TK_LITERAL || current_token.type == TK_PRINT_LIT) {
+            printf(" Value: %s", current_token.str);
         }
-        else if (token == TK_WS) {
+        else if (current_token.type == TK_WS) {
             printf(" (U+3000)");
         }
-        else if (token == TK_LN) {
+        else if (current_token.type == TK_LN) {
             printf(" (\\n)");
         }
         printf("\n");

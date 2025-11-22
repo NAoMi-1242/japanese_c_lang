@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include "error.h"
-#include "lexer.h" // token_line のために必要
+#include "lexer.h" // current_token を使うため
 
 // 行番号の初期値
 int current_line = 1;
@@ -30,8 +30,8 @@ void error(ErrorType type, const char *fmt, ...) {
 
     // ERR_SYSTEM の場合は行番号を表示しない
     if (type != ERR_SYSTEM) {
-        // Lexer, Syntax, Semantic エラーは行番号を表示
-        fprintf(stderr, "%d行目: ", token_line);
+        // 構造体から行番号を取得
+        fprintf(stderr, "%d行目: ", current_token.line);
     }
 
     vfprintf(stderr, fmt, ap);
