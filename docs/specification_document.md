@@ -274,12 +274,12 @@ program               ::= "メイン" statements_block
 statements_block      ::= "｛" { statement } "｝"
 
 statement             ::= simple_statement "。"
-                        | block_statement
+                        | loop_or_if_statement
 
 simple_statement      ::= TOKEN_VARIABLE statement_suffix
                         | (TOKEN_PRINT_LITERAL | TOKEN_LITERAL) "と出力する"
 
-block_statement       ::= "ループ" conditional_block
+loop_or_if_statement  ::= "ループ" conditional_block
                         | "もし" if_statement_block
 ```
 
