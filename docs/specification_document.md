@@ -256,29 +256,22 @@ jpc 言語では、C 言語のセミコロン（;）に相当する区切り文�
 
 コンパイラが内部的に参照する、1 トークン先読み（LL(1)）のために最適化された BNF です。
 
-### 8.1. 字句(トークン)と補助規則の定義
+### 8.1. 字句(トークン)の定義
 
 ```
 TOKEN_VARIABLE      ::= """ (任意の文字列) """
 TOKEN_LITERAL       ::= "「" (任意の数字) "」"
 TOKEN_PRINT_LITERAL ::= "「" (文字列/変数埋め込み可) "」"
-TOKEN_WS            ::= (全角空白)
-TOKEN_LN            ::= (改行文字)
-
-ws_or_ln            ::= TOKEN_WS | TOKEN_LN
 ```
 
-![トークンと補助規則](images/token+auxiliary.png)
+![トークンと補助規則](images/token.png)
 
 ### 8.2. プログラム全体
 
 ```
-program               ::= { ws_or_ln } "メイン" statements_block { ws_or_ln }
+program               ::= "メイン" statements_block
 
-statements_block      ::= { ws_or_ln }
-                          "｛" { ws_or_ln }
-                          { statement { ws_or_ln } }
-                          "｝"
+statements_block      ::= "｛" { statement } "｝"
 
 statement             ::= simple_statement "。"
                         | block_statement
@@ -299,13 +292,10 @@ statement_suffix      ::= "を" statement_suffix_wo
                         | "に" statement_suffix_ni
                         | "から" statement_suffix_kara
 
-statement_suffix_wo   ::= (TOKEN_LITERAL | TOKEN_VARIABLE) "で宣言する"
-                        | (TOKEN_LITERAL | TOKEN_VARIABLE) "でわる"
+statement_suffix_wo   ::= (TOKEN_LITERAL | TOKEN_VARIABLE) ("で宣言する" | "でわる")
 
-statement_suffix_ni   ::= (TOKEN_LITERAL | TOKEN_VARIABLE) "を代入する"
-                        | (TOKEN_LITERAL | TOKEN_VARIABLE) "をたす"
-                        | (TOKEN_LITERAL | TOKEN_VARIABLE) "をかける"
-                        | "入力する"
+statement_suffix_ni   ::= "入力する"
+                        | (TOKEN_LITERAL | TOKEN_VARIABLE) ("を代入する" | "をたす" | "をかける")
 
 statement_suffix_kara ::= (TOKEN_LITERAL | TOKEN_VARIABLE) "をひく"
 ```
@@ -316,12 +306,8 @@ statement_suffix_kara ::= (TOKEN_LITERAL | TOKEN_VARIABLE) "をひく"
 
 ```
 if_statement_block    ::= conditional_block
-                          { elseif_statement }
-                          [ else_statement ]
-
-elseif_statement      ::= { ws_or_ln } "ではなく" conditional_block
-
-else_statement        ::= { ws_or_ln } "ではない" statements_block
+                          { "ではなく" conditional_block }
+                          [ "ではない" statements_block ]
 ```
 
 ![if文関連](images/if-elseif-else.png)
@@ -329,25 +315,18 @@ else_statement        ::= { ws_or_ln } "ではない" statements_block
 ### 8.5. 条件式（階層構造）
 
 ```
-conditional_block     ::= { TOKEN_WS }
-                          "（" condition_expression "）"
-                          statements_block
+conditional_block     ::= "（" condition_expression "）" statements_block
 
-condition_expression  ::= { ws_or_ln }
-                          condition_term
-                          { ws_or_ln "または" ws_or_ln condition_term }
-                          { ws_or_ln }
+condition_expression  ::= condition_term { "または" condition_term }
 
-condition_term        ::= condition_factor
-                          { ws_or_ln "かつ" ws_or_ln condition_factor }
+condition_term        ::= condition_factor { "かつ" condition_factor }
 
 condition_factor      ::= simple_condition
                         | "（" condition_expression "）"
 
 simple_condition      ::= (TOKEN_LITERAL | TOKEN_VARIABLE) "が" (TOKEN_LITERAL | TOKEN_VARIABLE) comparison_op
 
-comparison_op         ::= "以上か" | "以下か" | "より大きいか" | "より小さいか"
-                        | "と一緒か" | "と違うか"
+comparison_op         ::= "以上か" | "以下か" | "より大きいか" | "より小さいか" | "と一緒か" | "と違うか"
 ```
 
 ![条件式関連](images/condition.png)

@@ -2,36 +2,23 @@
 #define TOKEN_H
 
 #include <stdio.h>
+#include <stdbool.h> // bool型を使用
 
 typedef enum {
     TK_EOF,         // ファイル終端
-    
-    // プログラム構造
     TK_MAIN,        // メイン
-
-    // 値・変数
     TK_VARIABLE,    // ”...”
     TK_LITERAL,     // 「...」 (数値)
     TK_PRINT_LIT,   // 「...」 (出力用文字列)
-
-    // 空白・改行
-    TK_WS,          // 全角空白 (U+3000)
-    TK_LN,          // 改行 (\n)
-
-    // 記号
     TK_LPAR,        // （
     TK_RPAR,        // ）
     TK_LBRACE,      // ｛
     TK_RBRACE,      // ｝
     TK_PERIOD,      // 。
-
-    // 助詞
     TK_WO,          // を
     TK_NI,          // に
     TK_KARA,        // から
     TK_GA,          // が
-
-    // キーワード
     TK_DECLARE,     // で宣言する
     TK_DIV,         // でわる
     TK_ASSIGN,      // を代入する
@@ -40,14 +27,10 @@ typedef enum {
     TK_SUB,         // をひく
     TK_INPUT,       // 入力する
     TK_OUTPUT,      // と出力する
-
-    // 制御構文
     TK_LOOP,        // ループ
     TK_IF,          // もし
     TK_ELSEIF,      // ではなく
     TK_ELSE,        // ではない
-    
-    // 比較・論理
     TK_OP_GE,       // 以上か
     TK_OP_LE,       // 以下か
     TK_OP_GT,       // より大きいか
@@ -56,23 +39,19 @@ typedef enum {
     TK_OP_NE,       // と違うか
     TK_AND,         // かつ
     TK_OR           // または
-
 } TokenType;
 
-// トークン構造体の定義
 typedef struct {
-    TokenType type;   // トークンの種類
-    char str[1024];   // トークンの文字列
-    int line;         // このトークンがある行番号
+    TokenType type;
+    char str[1024];
+    int line;
+    bool has_space_before;
+    bool has_newline_before;
 } Token;
 
-// 現在のトークン（グローバル変数）
 extern Token current_token;
 
-// トークン名文字列を返すヘルパー
 const char* getTokenName(TokenType type);
-
-// 初期化とトークン取得
 void getNextToken(FILE *fp);
 
 #endif
