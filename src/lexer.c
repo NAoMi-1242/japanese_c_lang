@@ -129,6 +129,19 @@ int convertZenkakuDot(const char *utf8_char, char *out) {
     return 0;
 }
 
+// 全角マイナス（－）を半角マイナス（-）に変換
+int convertZenkakuMinus(const char *utf8_char, char *out) {
+    unsigned char u0 = (unsigned char)utf8_char[0];
+    unsigned char u1 = (unsigned char)utf8_char[1];
+    unsigned char u2 = (unsigned char)utf8_char[2];
+    // 「－」(U+FF0D) は UTF-8 で EF BC 8D
+    if (u0 == 0xEF && u1 == 0xBC && u2 == 0x8D) {
+        *out = '-';
+        return 1;
+    }
+    return 0;
+}
+
 const char* getTokenName(TokenType type) {
     switch (type) {
         case TK_EOF:         return "TK_EOF";
@@ -375,6 +388,8 @@ void getNextToken(FILE *fp) {
             else if (tmpBuf[0] == '.') { strncat(numStr, tmpBuf, 1); dot_count++; }
             else if (convertZenkakuNum(tmpBuf, &converted)) strncat(numStr, &converted, 1);
             else if (convertZenkakuDot(tmpBuf, &converted)) { strncat(numStr, &converted, 1); dot_count++; }
+            // マイナス記号（半角/全角）の処理（先頭のみ許可）
+            else if (strlen(numStr) == 0 && (tmpBuf[0] == '-' || convertZenkakuMinus(tmpBuf, &converted))) { strcat(numStr, "-"); }
             else is_pure_number = 0;
         }
         
