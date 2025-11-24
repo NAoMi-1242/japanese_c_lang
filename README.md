@@ -31,6 +31,6 @@ make
 
 ### 5. 実行
 ```bash
-./jpc tests/test.jpc -o test
-./test
+./jpc tests/sample.jpc -o sample
+./sample
 ```
