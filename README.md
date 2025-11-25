@@ -38,4 +38,4 @@ make
 ```
 
 ## 実行デモ動画
-<video src="docs/demo.mp4" controls></video>
+[デモ動画](https://github.com/user-attachments/assets/90f66bbf-2180-4ee2-904d-05cffa9a5131)
