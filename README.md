@@ -1,10 +1,12 @@
-# jpc言語
-## ドキュメント
+# <img src="docs/images/jpc-icon.png" height="35" style="vertical-align: bottom;"> jpc言語
+## 資料
 [仕様書はこちら](docs/specification_document.md)
 
-## コマンド
+[スライドはこちら（Canvaに飛びます）](https://www.canva.com/design/DAG5nal8uAE/RtLvWdrWG5e74CiZr3suuw/edit?utm_content=DAG5nal8uAE&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
 
-### 1. プロジェクトのクローン
+## 実行方法
+
+### 1. リポジトリのクローン
 ```bash
 git clone https://github.com/NAoMi-1242/japanese_c_lang.git
 ````
@@ -19,7 +21,7 @@ cd japanese_c_lang
 docker-compose build
 ```
 
-### 4. 開発コンテナの起動と接続
+### 4. コンテナの起動
 ```bash
 docker-compose run --rm dev
 ```
@@ -29,8 +31,11 @@ docker-compose run --rm dev
 make
 ```
 
-### 5. 実行
+### 6. 実行
 ```bash
 ./jpc tests/sample.jpc -o sample
 ./sample
 ```
+
+## 実行デモ動画
+<video src="docs/demo.mp4" controls></video>
